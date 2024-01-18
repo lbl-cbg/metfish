@@ -1,3 +1,5 @@
+import os
+
 from Bio.PDB.MMCIFParser import FastMMCIFParser
 from Bio.PDB.PDBParser import PDBParser
 import numpy as np
@@ -5,10 +7,10 @@ from periodictable import elements
 from scipy.spatial.distance import pdist, squareform
 
 
-n_elec_df = pd.Series({el.symbol: el.number for el in elements})
+n_elec_df = {el.symbol: el.number for el in elements}
 
 
-def get_Pr(pdb_path):
+def get_Pr(structure, structure_id="", dmax=175, step=0.25):
     """
     Args:
         stucture (Structure or str) : The BioPython structure or the path to
@@ -18,6 +20,14 @@ def get_Pr(pdb_path):
                                       of the structure in the file to use.
                                       By default, assume one structure in
                                       the file
+        dmax (int, float)           : the max distance between atoms to
+                                      consider. default = 175
+        step (float)                : the bin width to use for building
+                                      histogram. default = 0.25
+
+    Returns:
+        (r, p) : a tuple with *r* as the first element and *P(r)* as the
+                 second element
     """
     if isinstance(structure, str):
         _, ext = os.path.splitext(structure)
@@ -29,7 +39,7 @@ def get_Pr(pdb_path):
             warnings.warn(f"Unrecognized extension '{ext}'. Attempting to read as a PDB file")
             structure = PDBParser().get_structure(structure_id, structure)
 
-   # Get atomic coordinates and atomic weights i.e. number of electrons
+    # Get atomic coordinates and atomic weights i.e. number of electrons
     coords = list()
     weights = list()
     for i, res in enumerate(structure.get_residues()):
@@ -51,6 +61,7 @@ def get_Pr(pdb_path):
     dist_weights = squareform(dist_weights)
 
     # Calculate histogram
-    hist, bins = np.histogram(distances, bins=100, density=True, weights=dist_weights)
+    hist, r = np.histogram(distances, bins=np.arange(0, dmax + 0.1, step), weights=dist_weights)
+    p = np.concatenate(([0], hist / hist.sum()))
 
-    return hist, bins
+    return r, p
