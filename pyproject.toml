@@ -26,15 +26,11 @@ keywords = [
 ]
 
 dependencies = [
-    "matplotlib",
-    "scikit-learn",
-    "seaborn",
-    "scipy",
-    "h5py>=3.7",
-    "numpy",
-    "ipykernel",
+    "biopython",
     "pandas",
-    "yt",
+    "numpy",
+    "scipy",
+    "periodictable"
 ]
 
 dynamic = ["version"]
