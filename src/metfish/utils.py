@@ -10,7 +10,7 @@ from scipy.spatial.distance import pdist, squareform
 n_elec_df = {el.symbol: el.number for el in elements}
 
 
-def get_Pr(structure, structure_id="", dmax=175, step=0.25):
+def get_Pr(structure, structure_id="", dmax=None, step=0.5):
     """
     Args:
         stucture (Structure or str) : The BioPython structure or the path to
@@ -20,10 +20,11 @@ def get_Pr(structure, structure_id="", dmax=175, step=0.25):
                                       of the structure in the file to use.
                                       By default, assume one structure in
                                       the file
-        dmax (int, float)           : the max distance between atoms to
-                                      consider. default = 175
+        dmax (int, float, None)     : the max distance between atoms to
+                                      consider. default = None i.e. determine
+                                      from max distance found in structure
         step (float)                : the bin width to use for building
-                                      histogram. default = 0.25
+                                      histogram. default = 0.5
 
     Returns:
         (r, p) : a tuple with *r* as the first element and *P(r)* as the
@@ -61,6 +62,9 @@ def get_Pr(structure, structure_id="", dmax=175, step=0.25):
     dist_weights = squareform(dist_weights)
 
     # Calculate histogram
+    if dmax is None:
+        dmax = distances.max()
+        dmax = np.ceil(dmax / step) * step
     hist, r = np.histogram(distances, bins=np.arange(0, dmax + 0.1, step), weights=dist_weights)
     p = np.concatenate(([0], hist / hist.sum()))
 
