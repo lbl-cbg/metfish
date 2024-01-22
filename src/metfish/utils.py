@@ -1,4 +1,5 @@
 import os
+import warnings
 
 from Bio.PDB.MMCIFParser import FastMMCIFParser
 from Bio.PDB.PDBParser import PDBParser
@@ -13,18 +14,18 @@ n_elec_df = {el.symbol: el.number for el in elements}
 def get_Pr(structure, structure_id="", dmax=None, step=0.5):
     """
     Args:
-        stucture (Structure or str) : The BioPython structure or the path to
-                                      the PDB or mmCIF to calculate the P(r)
-                                      curve for.
-        structure_id (str)          : If *structure* is a file path, the ID
-                                      of the structure in the file to use.
-                                      By default, assume one structure in
-                                      the file
-        dmax (int, float, None)     : the max distance between atoms to
-                                      consider. default = None i.e. determine
-                                      from max distance found in structure
-        step (float)                : the bin width to use for building
-                                      histogram. default = 0.5
+        structure (Structure or str) : The BioPython structure or the path to
+                                       the PDB or mmCIF to calculate the P(r)
+                                       curve for.
+        structure_id (str)           : If *structure* is a file path, the ID
+                                       of the structure in the file to use.
+                                       By default, assume one structure in
+                                       the file
+        dmax (int, float, None)      : the max distance between atoms to
+                                       consider. default = None i.e. determine
+                                       from max distance found in structure
+        step (float)                 : the bin width to use for building
+                                       histogram. default = 0.5
 
     Returns:
         (r, p) : a tuple with *r* as the first element and *P(r)* as the
@@ -46,7 +47,6 @@ def get_Pr(structure, structure_id="", dmax=None, step=0.5):
     for i, res in enumerate(structure.get_residues()):
         if res.id[0] == " ":
             for i, atom in enumerate(res.get_atoms()):
-                c = atom.coord
                 elem = atom.element
                 coords.append(atom.coord)
                 weights.append(n_elec_df[elem])
