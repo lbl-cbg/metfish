@@ -1,4 +1,13 @@
 #!/bin/bash
+# Author: Feng Yu fyu2@lbl.gov 2024
+
+# CoDNaS is a protein conformational database based of entire proteins as derived from PDB. 
+# For each represented protein, the database contains the redundant collection of all corresponding different structures. 
+
+# This script is used to calculate SAXS curve for PDBs based on lists of PDBs downloading from the CoDNaS server.
+# This script will generate SAXS curve, P(r) curve , extract sequences and download the PDBs for each PDB entry.
+
+
 
 PROGNAME=$0
 
@@ -49,7 +58,7 @@ echo "created PDB storage folder at ${pdb_loc}"
 mkdir ${seq_loc}
 echo "created sequence storage folder at ${seq_loc}"
 
-./batch_download_seq_new.sh -f ${outdir}/clean_pdb.output  -o ${outdir} -p -q
+./batch_download_seq.sh -f ${outdir}/clean_pdb.output  -o ${outdir} -p -q
 
 mkdir ${saxs_loc}
 echo "created SAXS measurement storage folder at ${saxs_loc}"

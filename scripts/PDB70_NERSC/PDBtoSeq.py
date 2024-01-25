@@ -4,7 +4,7 @@ import argparse
 import os
 
 def extract_seq(pdb_input,output_path):
-    pdb_name=pdb_input.split(".")[0]
+    pdb_name=os.path.basename(pdb_input).split(".")[0]
     counter=1
     for record in SeqIO.parse(pdb_input,"pdb-atom"):
         if counter > 1:

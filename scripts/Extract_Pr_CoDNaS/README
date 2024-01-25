@@ -5,7 +5,7 @@ CoDNaS is a database comparing diverse conformation of the identical proteins.
 It provides a good interface for pairwise comparison but lack of useful APIs especially for downloading files.
 
 The best approach for now is to manually download a tsv file containing the PDB ID of all conformers for a single protein.
-Thus, this script is used to automatically download the PDB from RCSB based on the list and then covert them to SAXS curve and P(r) curve with FOXS and RAW APIs.
+Thus, this script is used to automatically download the PDB from RCSB based on the list and then convert them to SAXS curve and P(r) curve with FOXS and RAW APIs.
 
 Problems:
 1.FOXS will add the hydration layer to the PDB and then calculated the SAXS curve. This may eliminate some difference between conformations

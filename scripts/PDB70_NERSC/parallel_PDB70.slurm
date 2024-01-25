@@ -8,5 +8,6 @@
 #SBATCH --account=m3513
 
 module load python
+module load parallel
 conda activate /pscratch/sd/l/lemonboy/PDB_prep
 ls  *.pdb | parallel -j 4 bash fixpdb_pr_parallel.bash -f {} -o . :::
