@@ -21,7 +21,7 @@ Usage: $PROGNAME -f <file> [-o <dir>] [-c] [-p]
  -o  <dir>: the output dir, default: current dir
  -c       : download a cif.gz file for each PDB id and store in the pdb subfolder
  -p       : download a pdb.gz file for each PDB id (not available for large structures) and store in the pdb subfolder
- -q       : download a .fasta file for each PDB id (sequence) and sotre in the sequence subfolder
+ -q       : download a .fasta file for each PDB id (sequence) and store in the sequence subfolder
 EOF
   exit 1
 }

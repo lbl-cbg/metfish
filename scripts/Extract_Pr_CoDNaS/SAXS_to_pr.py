@@ -2,7 +2,7 @@
 """
 Author: Feng Yu. LBNL
 
-Convert the SAXS file to P(r) curves using thge RAW API
+Convert the SAXS file to P(r) curves using the RAW API
 
 First version created on 01/04/2024
 """
@@ -14,7 +14,7 @@ import os
 
 parser = argparse.ArgumentParser(
     prog = 'SAXS2PR',
-    description = 'Convert the SAXS file to P(r) curves using thge RAW API' )
+    description = 'Convert the SAXS file to P(r) curves using the RAW API' )
 parser.add_argument('-f', '--filename', required=True)
 parser.add_argument('-o', '--output', default='./')
 
