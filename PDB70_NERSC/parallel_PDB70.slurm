@@ -9,4 +9,4 @@
 
 module load python
 conda activate /pscratch/sd/l/lemonboy/PDB_prep
-parallel -j 4 bash fixpdb_pr_parallel.bash -f {} -o . ::: *.pdb
+ls  *.pdb | parallel -j 4 bash fixpdb_pr_parallel.bash -f {} -o . :::
