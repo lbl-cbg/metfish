@@ -6,6 +6,8 @@ from Bio.PDB.PDBParser import PDBParser
 import numpy as np
 from periodictable import elements
 from scipy.spatial.distance import pdist, squareform
+from Bio import SeqIO
+from Bio.SeqRecord import SeqRecord
 
 
 n_elec_df = {el.symbol: el.number for el in elements}
@@ -69,3 +71,25 @@ def get_Pr(structure, structure_id="", dmax=None, step=0.5):
     p = np.concatenate(([0], hist / hist.sum()))
 
     return r, p
+
+def extract_seq(pdb_input,output_path):
+    """
+    Args:
+        pdb_input   : The path to the PDB to extract sequence.
+                      The PDB must only contain a single chain. 
+                      pdbfixer is a good tool to prepare PDB for this function
+        output_path : The path to store the output fasta file.
+                      Example: /location/to/store/PDB.fasta
+    Returns:
+        There is no return for this function. The sequence will be written 
+        as a fasta file in the give location.
+    """
+    pdb_name=os.path.basename(pdb_input).split(".")[0]
+    counter=1
+    for record in SeqIO.parse(pdb_input,"pdb-atom"):
+        if counter > 1:
+            raise ValueError("More than 1 Chain is in the file {}".format(pdb_input))
+        else:
+            new_seq_record = SeqRecord(record.seq, id=pdb_name, description='')
+            SeqIO.write(new_seq_record, output_path ,"fasta")
+        counter+=1

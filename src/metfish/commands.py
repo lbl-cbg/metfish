@@ -5,6 +5,7 @@ import sys
 import pandas as pd
 
 from .utils import get_Pr
+from .utils import extract_seq
 
 def get_Pr_cli(argv=None):
 
@@ -40,3 +41,16 @@ def get_Pr_cli(argv=None):
                   step=args.step)
 
     pd.DataFrame({"r": r, "P(r)": p}).to_csv(out, index=False)
+
+def extract_seq_cli(argv=None):
+    
+    parser = argparse.ArgumentParser(
+    description = '''Extract Sequence from PDB using the BioPython API.
+    The output will be stored at the current directory as a fasta file.''' )
+    
+    parser.add_argument('-f', '--filename', required=True, help="input pdb file")
+    parser.add_argument('-o', '--output', required=True, help="output fasta file path + name")
+
+    args = parser.parse_args()
+
+    extract_seq(args.filename,args.output)

@@ -20,8 +20,8 @@ def main():
     description = '''Extract Sequence from PDB using the BioPython API.
     The output will be stored at the current directory as a fasta file.''' )
     
-    parser.add_argument('-f', '--filename', required=True)
-    parser.add_argument('-o', '--output', default='./')
+    parser.add_argument('-f', '--filename', required=True, help='input pdb file name')
+    parser.add_argument('-o', '--output', required=True, help='output fasta file name')
 
     args = parser.parse_args()
 

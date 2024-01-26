@@ -37,6 +37,7 @@ dynamic = ["version"]
 
 [project.scripts]
 calc-pr = "metfish.commands:get_Pr_cli"
+extract-seq = "metfish.commands:extract_seq_cli"
 
 [tool.ruff]
 # Exclude a variety of commonly ignored directories.
