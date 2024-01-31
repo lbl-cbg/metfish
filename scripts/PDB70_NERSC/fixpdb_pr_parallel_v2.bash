@@ -54,4 +54,5 @@ if [ -f "$file" ]; then
    pdbfixer ${file} --output "${pdb_loc}/fixed_${filename}" --keep-heterogens=none --replace-nonstandard --add-residues --verbose
    calc-pr "${pdb_loc}/fixed_${filename}" -o "${pr_loc}/${filename}.pr.csv"
    python PDBtoSeq.py  -f "${pdb_loc}/fixed_${filename}" -o "${seq_loc}/${filename}.fasta" 
+   echo ${file} >> complete.txt
 fi
