@@ -48,6 +48,10 @@ pr_loc=${outdir}/saxs_r
 #echo "created saxs P(r) storage folder at ${pr_loc}"
 
 if [ -f "$file" ]; then
+       done=`grep -c ${file} complete.txt`
+       if [ "$done" -ne "0" ] ; then
+             return
+       fi
    echo ${file}
    filename=$(basename "$file")
    echo ${filename}
