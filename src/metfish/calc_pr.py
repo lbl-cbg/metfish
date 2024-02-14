@@ -6,7 +6,7 @@ import pandas as pd
 
 from .utils import get_Pr
 
-def get_Pr_cli(argv=None):
+def main(argv=None):
 
     desc = "Calculate an exact P(r) curve for a given structure"
     epi = """By default, Dmax is calculated from the max distance found in the structure."""
@@ -23,7 +23,7 @@ def get_Pr_cli(argv=None):
                         help="the path to write the file to. by default, write to stdout")
     parser.add_argument("-f", "--force", action='store_true', help="overwrite output if it exist", default=False)
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     out = sys.stdout
     if args.output is not None:
@@ -40,3 +40,6 @@ def get_Pr_cli(argv=None):
                   step=args.step)
 
     pd.DataFrame({"r": r, "P(r)": p}).to_csv(out, index=False)
+
+if __name__ == '__main__':
+    main()
