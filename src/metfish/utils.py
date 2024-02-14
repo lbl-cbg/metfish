@@ -1,14 +1,21 @@
 import os
 import warnings
+import numpy as np
 
 from Bio.PDB.MMCIFParser import FastMMCIFParser
 from Bio.PDB.PDBParser import PDBParser
-import numpy as np
+from Bio.PDB import PDBIO
+from Bio.SVDSuperimposer import SVDSuperimposer
+from Bio import SeqUtils, Align
+
+from biopandas.pdb import PandasPdb
 from periodictable import elements
 from scipy.spatial.distance import pdist, squareform
+from alphafold.common import protein
 
 
 n_elec_df = {el.symbol: el.number for el in elements}
+amino_acids = [a.upper() for a in SeqUtils.IUPACData.protein_letters_3to1.keys()]
 
 
 def get_Pr(structure, structure_id="", dmax=None, step=0.5):
@@ -69,3 +76,127 @@ def get_Pr(structure, structure_id="", dmax=None, step=0.5):
     p = np.concatenate(([0], hist / hist.sum()))
 
     return r, p
+
+
+def get_alphafold_atom_positions(fname: str):
+    """ Use alphafold protein module to convert pdb file to alphafold's atomic position representation
+
+    Args:
+        fname (str): path to the pdb file
+
+    Returns:
+        structure: An np.ndarray with cartesian coordinates of atoms in angstroms [num_res, num_atom_type, 3]. 
+        The atom types correspond to residue_constants.atom_types, i.e. the first three are N, CA, CB.
+    """
+    # read in file text and use af protein module to convert to position representation
+    with open(fname, 'r') as file:
+        pdb_str = file.read()
+    prot = protein.from_pdb_string(pdb_str)  # protein module uses pdb file contents as input
+
+    return prot.atom_positions
+
+
+def convert_pdb_to_sequence(fname: str):
+    """ Get single letter amino acid sequence from a pdb structure file """
+    structure = PDBParser(QUIET=True).get_structure('', fname)
+    residues = [res.resname for res in structure.get_residues() if res.resname in amino_acids]
+    sequence = get_single_letter_sequences(residues)
+    
+    return sequence
+
+
+def get_single_letter_sequences(residues):
+    ret = list()
+    for res in residues:
+        res = res[0] + res[1:].lower()
+        ret.append(SeqUtils.IUPACData.protein_letters_3to1[res])
+    return "".join(ret)
+
+
+def align_sequences(ref_df, query_df):
+    """ Align protein sequences """
+    ref_seq = get_single_letter_sequences(ref_df['residue_name'])
+    query_seq = get_single_letter_sequences(query_df['residue_name'])
+    
+    # if not the same sequence, align
+    if ref_seq != query_seq:
+        aligner = Align.PairwiseAligner()
+        alignments = aligner.align(ref_seq, query_seq)
+
+        ref_idx, query_idx = alignments[0].indices[:, ~(alignments[0].indices == -1).any(axis=0)]
+        
+        ref_df = ref_df.iloc[ref_idx]
+        query_df = query_df.iloc[query_idx]
+
+    return ref_df, query_df
+
+
+def superimpose_structures(fname_fixed, fname_moving, atom_types=["CA", "N", "C", "O"]):
+    """ Superimpose two protein structures. 
+
+    Args:
+        fname_fixed (str): path to PDB file
+        fname_moving (str): path to PDB file
+        atom_types (list): atom types to align structures with, traditionally aligned with either
+        1) only alpha-carbon atoms (CA), or 2) the "protein backbone" atoms (CA, N, C, O), or all atoms
+
+    Returns:
+        superimposer: returns instance of BioPython SVDSuperImposer class
+    """
+
+    # read in structures
+    fixed_atom_df = PandasPdb().read_pdb(fname_fixed).df['ATOM']
+    moving_atom_df = PandasPdb().read_pdb(fname_moving).df['ATOM']
+
+    # filter for atom types and amino acide residues only
+    fixed_atom_df = fixed_atom_df.query(f"residue_name in {amino_acids} & atom_name in {atom_types}")
+    moving_atom_df = moving_atom_df.query(f"residue_name in {amino_acids} & atom_name in {atom_types}")
+
+    # align sequences (if already aligned, will return same df)
+    fixed_atom_df, moving_atom_df = align_sequences(fixed_atom_df, moving_atom_df)
+
+    # get coordinates of the atoms
+    fixed_coords = fixed_atom_df[['x_coord', 'y_coord', 'z_coord']].to_numpy()
+    moving_coords = moving_atom_df[['x_coord', 'y_coord', 'z_coord']].to_numpy()
+
+    # superimpose structures
+    si = SVDSuperimposer()
+    si.set(fixed_coords, moving_coords)
+    si.run() # Run the SVD alignment
+    
+    return si
+
+def get_rmsd(fname_a, fname_b, atom_types=["CA", "N", "C", "O"]):
+    """ Calculate the RMSD between superimposed coordinates of two protein structures.
+    """
+
+    si = superimpose_structures(fname_a, fname_b, atom_types=atom_types)
+    return si.get_rms()
+
+def align_structures(fname_fixed, fname_moving):
+    """Align two protein structures from pdb files and save aligned structures
+
+    Args:
+        fname_fixed (str): path to PDB file
+        fname_moving (str): path to PDB file
+
+    Returns:
+        fname_aligned: path to aligned PDB file (rotate/translated version of fname_moving)
+    """
+
+    # load structure to transform
+    structure = PDBParser(QUIET=True).get_structure('', fname_moving)
+
+    # superimpose on experimental structure file 
+    si = superimpose_structures(fname_fixed, fname_moving)
+    rot, trans = si.get_rotran()
+    for atom in structure.get_atoms():
+        atom.transform(rot.astype("f"), trans.astype("f"))
+
+    # save modified outputs as PDB files
+    fname_aligned = f"{fname_moving.strip('.pdb')}_aligned.pdb"
+    io = PDBIO()
+    io.set_structure(structure) 
+    io.save(fname_aligned)
+    
+    return fname_aligned
