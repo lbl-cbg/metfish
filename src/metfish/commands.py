@@ -49,9 +49,13 @@ def prep_conformer_pairs_cli(argv=None):
 
     parser = argparse.ArgumentParser(description=desc, epilog=epi)
     parser.add_argument("data_dir", help="the directory containing the pdb files / csv")
-    parser.add_argument("-o", "--output_dir", type=str, default=None, help="the directory to save output files to. Defaults to data_dir if not provided")
-    parser.add_argument("-n", "--n_pairs", type=int, default=6, help="the # of pairs to look at, N pairs -> 2N structures predicted")
-    parser.add_argument("-a", "--af_output_dir", type=str, default=None, help="path with alphafold outputs, used to calculate which conformer is less similar to the original AF prediction.")
+    parser.add_argument("-o", "--output_dir", type=str, default=None, 
+                        help="the directory to save output files to. Defaults to data_dir if not provided")
+    parser.add_argument("-n", "--n_pairs", type=int, default=6, 
+                        help="the # of pairs to look at, N pairs -> 2N structures predicted")
+    parser.add_argument("-a", "--af_output_dir", type=str, default=None,
+        help="path with alphafold outputs, used to calculate which conformer is less similar to the original AF prediction.",
+    )
 
     args = parser.parse_args()
 

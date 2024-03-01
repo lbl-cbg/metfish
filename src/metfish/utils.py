@@ -1,14 +1,15 @@
 import os
 import warnings
 import numpy as np
+import pandas as pd
 
 from Bio.PDB.MMCIFParser import FastMMCIFParser
 from Bio.PDB.PDBParser import PDBParser
 from Bio.PDB import PDBIO
 from Bio.SVDSuperimposer import SVDSuperimposer
 from Bio import SeqUtils, Align
+from Bio.PDB.PDBIO import Select
 
-from biopandas.pdb import PandasPdb
 from periodictable import elements
 from scipy.spatial.distance import pdist, squareform
 from alphafold.common import protein
@@ -95,6 +96,17 @@ def get_alphafold_atom_positions(fname: str):
 
     return prot.atom_positions
 
+def save_clean_pdb(fname_original: str, fname_clean: str):
+    """Rewrite pdb file with only ATOM entries"""
+    raw_structure = PDBParser(QUIET=True).get_structure('', fname_original)
+
+    class AtomsOnly(Select):
+        def accept_residue(self, res):
+            return res.get_id()[0] == " "  # this is the heteroatom field, if not empty is HETATM
+        
+    io = PDBIO()
+    io.set_structure(raw_structure)
+    io.save(fname_clean, select=AtomsOnly())
 
 def convert_pdb_to_sequence(fname: str):
     """ Get single letter amino acid sequence from a pdb structure file """
@@ -104,6 +116,17 @@ def convert_pdb_to_sequence(fname: str):
     
     return sequence
 
+def convert_pdb_to_atom_df(fname: str):
+    """Get a data frame with atom coordinates, names, and residue names from a pdb structure file"""
+    structure = PDBParser(QUIET=True).get_structure('', fname)
+    
+    atom_data = []
+    for res in structure.get_residues():
+        coords = [a.get_vector()[:] for a in res]
+        types = [a.get_name() for a in res]
+        atom_data.append(dict(residue_name=res.resname, atom_name=types, coords=coords))
+
+    return pd.DataFrame(atom_data).explode(['atom_name', 'coords'])
 
 def get_single_letter_sequences(residues):
     ret = list()
@@ -111,7 +134,6 @@ def get_single_letter_sequences(residues):
         res = res[0] + res[1:].lower()
         ret.append(SeqUtils.IUPACData.protein_letters_3to1[res])
     return "".join(ret)
-
 
 def align_sequences(ref_df, query_df):
     """ Align protein sequences """
@@ -130,7 +152,6 @@ def align_sequences(ref_df, query_df):
 
     return ref_df, query_df
 
-
 def superimpose_structures(fname_fixed, fname_moving, atom_types=["CA", "N", "C", "O"]):
     """ Superimpose two protein structures. 
 
@@ -145,8 +166,8 @@ def superimpose_structures(fname_fixed, fname_moving, atom_types=["CA", "N", "C"
     """
 
     # read in structures
-    fixed_atom_df = PandasPdb().read_pdb(fname_fixed).df['ATOM']
-    moving_atom_df = PandasPdb().read_pdb(fname_moving).df['ATOM']
+    fixed_atom_df = convert_pdb_to_atom_df(fname_fixed)
+    moving_atom_df = convert_pdb_to_atom_df(fname_moving)
 
     # filter for atom types and amino acide residues only
     fixed_atom_df = fixed_atom_df.query(f"residue_name in {amino_acids} & atom_name in {atom_types}")
@@ -156,8 +177,8 @@ def superimpose_structures(fname_fixed, fname_moving, atom_types=["CA", "N", "C"
     fixed_atom_df, moving_atom_df = align_sequences(fixed_atom_df, moving_atom_df)
 
     # get coordinates of the atoms
-    fixed_coords = fixed_atom_df[['x_coord', 'y_coord', 'z_coord']].to_numpy()
-    moving_coords = moving_atom_df[['x_coord', 'y_coord', 'z_coord']].to_numpy()
+    fixed_coords = np.array(fixed_atom_df['coords'].to_list())
+    moving_coords = np.array(moving_atom_df['coords'].to_list())
 
     # superimpose structures
     si = SVDSuperimposer()
