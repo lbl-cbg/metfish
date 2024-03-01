@@ -3,6 +3,6 @@ pandas
 numpy
 scipy
 periodictable
-biopandas
 seaborn
+matplotlib
 alphafold-colabfold
