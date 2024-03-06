@@ -16,7 +16,7 @@ If you installed openmm, pdbfixer and metfish with conda/pip, generally speaking
 
 - Python 3.12.1
 - openmm 8.1.1
-- pdbfixer 1.9.0
+- pdbfixer 1.9.0 (modified) (https://github.com/smallfishabc/pdbfixer.git)
 - metfish 0.0.0
 - GNU Parallel
 - Input PDB file(s) containing !!single chain!! protein structures. (in a single folder for parallel computing input)
