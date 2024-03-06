@@ -4,7 +4,7 @@ import argparse
 import os
 
 def extract_seq(pdb_input,output_path):
-    pdb_name=os.path.basename(pdb_input).split(".")[0]
+    pdb_name=pdb_input.split(".")[0]
     counter=1
     for record in SeqIO.parse(pdb_input,"pdb-atom"):
         if counter > 1:
@@ -20,8 +20,8 @@ def main():
     description = '''Extract Sequence from PDB using the BioPython API.
     The output will be stored at the current directory as a fasta file.''' )
     
-    parser.add_argument('-f', '--filename', required=True, help='input pdb file name')
-    parser.add_argument('-o', '--output', required=True, help='output fasta file name')
+    parser.add_argument('-f', '--filename', required=True)
+    parser.add_argument('-o', '--output', default='./')
 
     args = parser.parse_args()
 

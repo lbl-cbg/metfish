@@ -6,7 +6,7 @@ usage() {
   cat << EOF >&2
 Usage: $PROGNAME -f <file> -o <dir>
 
--f <file>: the input file containing a list of pdb files (can be obtained using ls > file_name.txt)
+-f <file>: the input PDB file path
 -o  <dir>: the output dir
 EOF
  exit 1
@@ -49,9 +49,9 @@ ref_seq_loc=${outdir}/ref_seq
 #echo "created saxs P(r) storage folder at ${pr_loc}"
 
 if [ -f "$file" ]; then
-   done=`grep -c ${file} complete.txt`
+   done=`grep -c ${file} ${outdir}/complete.txt`
    echo $done
-   if [ "$done" -ne "0" ] ; then
+   if [ "$done" -ne 0 ] ; then
        exit
    fi
    echo ${file}
@@ -62,10 +62,18 @@ if [ -f "$file" ]; then
    echo ${filename}
    
    python get_full_seq.py -f ${file} -o ${ref_seq_loc}
+   if [ ! -f "${ref_seq_loc}/fixed_${prefix}.fasta" ]; then
+   	echo "BASH_ref_seq_Error: File ${ref_seq_loc}/fixed_${prefix}.fasta does not exist."
+        exit
+   fi
    pdbfixer ${file} --output "${pdb_loc}/fixed_${filename}" \
    --keep-heterogens=none --replace-nonstandard --add-residues --add-atoms=all  --verbose \
    --sequence "${ref_seq_loc}/fixed_${prefix}.fasta" --chain_id "${chain_ID}"
+   if [ ! -f "${pdb_loc}/fixed_${filename}" ]; then
+        echo "BASH_fixer_Error: File ${pdb_loc}/fixed_${filename} does not exist."
+        exit
+   fi
    calc-pr "${pdb_loc}/fixed_${filename}" -o "${pr_loc}/${filename}.pr.csv"
    python PDBtoSeq.py  -f "${pdb_loc}/fixed_${filename}" -o "${seq_loc}/${filename}.fasta" 
-   echo ${file} >> complete.txt
+   echo ${file} >> ${outdir}/complete.txt
 fi

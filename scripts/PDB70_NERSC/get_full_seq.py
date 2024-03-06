@@ -10,12 +10,12 @@ import os
 def extract_ref_seq(input_pdb_path, ref_pdb_name, chain_ID):
     pdbl = PDBList()
     seqres_type="pdb-seqres"
-    # Retrive PDB reference (with full sequence) from RCSB
+    # Retrieve PDB reference (with full sequence) from RCSB
     # Will not rewrite PDB if already downloaded
-    # Will download obsolete PBDS
-    ref_file_name=pdbl.retrieve_pdb_file(ref_pdb_name, file_format='pdb', obsolete=True , pdir=".")
+    # Will download obsolete PDBS
+    ref_file_name=pdbl.retrieve_pdb_file(ref_pdb_name, file_format='pdb', pdir="./tmp")
     if not os.path.exists(ref_file_name):
-        ref_file_name=pdbl.retrieve_pdb_file(ref_pdb_name, file_format='mmCif', pdir=".")
+        ref_file_name=pdbl.retrieve_pdb_file(ref_pdb_name, file_format='mmCif', pdir="./tmp")
         seqres_type="cif-seqres"
     if not os.path.exists(ref_file_name):
         raise ValueError("PDB doesn't exist in the database")
