@@ -1,0 +1,33 @@
+# PDB Loop Fixer/ SAXS profile Script
+
+## Overview
+This script is designed to fix loops and generate SAXS data for Protein Data Bank (PDB) files using GNU parallel on NERSC. This script will calculate the SAXS P(r) curve for single chain and single conformation PDBs as a reference for training the metfish deep learning network.
+
+## Features
+- Corrects loop regions in PDB files.
+- Utilizes GNU parallel programming for multi-thread processing on supercomputers.
+- Generates output logs for tracking changes and errors.
+- Generates standalone fasta for PDBs after fixing the loop.
+- Calculate the SAXS P(r) curve for fixed PDBs
+
+## Prerequisites
+Here are the prerequisites tested on NERSC. Generally speaking, this script does now have a strick restriction on Python and Library versions.
+If you installed openmm, pdbfixer and metfish with conda/pip, generally speaking, you do not need to install Numpy and other dependencies independently.
+
+- Python 3.12.1
+- openmm 8.1.1
+- pdbfixer 1.9.0
+- metfish 0.0.0
+- GNU Parallel
+- Input PDB file(s) containing !!single chain!! protein structures. (in a single folder for parallel computing input)
+
+## Installation
+1. Clone or download the repository.
+(optional but recommended) Create a new conda environment for installation
+2. Install the metfish package and other prerequisites.
+3. Copy the scripts in PDB70_NERSC folder to the target folder and edit the slurm script to configure the input, output folders and job queue settings to user's preferences.
+
+## Usage
+For a single PDB file, please refer to the usage of fixpdb_pr_parallel.bash
+
+For multiple PDB files, please refer to the parallel_PDB70.slurm
