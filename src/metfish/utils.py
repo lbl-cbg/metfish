@@ -9,10 +9,13 @@ from Bio.PDB import PDBIO
 from Bio.SVDSuperimposer import SVDSuperimposer
 from Bio import SeqUtils, Align
 from Bio.PDB.PDBIO import Select
+from Bio import SeqIO
+from Bio.SeqRecord import SeqRecord
 
 from periodictable import elements
 from scipy.spatial.distance import pdist, squareform
 from alphafold.common import protein
+from alphafold.model import lddt
 
 
 n_elec_df = {el.symbol: el.number for el in elements}
@@ -221,3 +224,15 @@ def align_structures(fname_fixed, fname_moving):
     io.save(fname_aligned)
     
     return fname_aligned
+
+def get_lddt(fname_predicted, fname_true):
+    structure_predicted = PDBParser(QUIET=True).get_structure('', fname_predicted)
+    structure_true = PDBParser(QUIET=True).get_structure('', fname_true)
+    coords_predicted = [a.get_vector()[:] for res in structure_predicted.get_residues() for a in res]
+    coords_true = [a.get_vector()[:] for res in structure_true.get_residues() for a in res]
+
+    coords_predicted = np.array(coords_predicted)[np.newaxis, :, :]
+    coords_true = np.array(coords_true)[np.newaxis, :, :]
+    true_pos_mask = np.array([[[1]] * np.shape(coords_true)[1]])
+
+    return np.asarray(lddt.lddt(coords_predicted, coords_true, true_pos_mask))[0]

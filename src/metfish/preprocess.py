@@ -50,10 +50,13 @@ def prep_conformer_pairs(data_dir, output_dir=None, n_pairs=6, af_output_dir=Non
             )
 
         # save pairs as alphafold structure representations
-        struct = get_alphafold_atom_positions(f"{output_dir}/pdbs/{name}_atom_only.pdb")
-        Path(f"{output_dir}/af_structures/").mkdir(parents=True, exist_ok=True)
-        with open(f"{output_dir}/af_structures/{name}.pickle", "wb") as f:
-            pickle.dump(struct, file=f)
+        try:
+            struct = get_alphafold_atom_positions(f"{output_dir}/pdbs/{name}_atom_only.pdb")
+            Path(f"{output_dir}/af_structures/").mkdir(parents=True, exist_ok=True)
+            with open(f"{output_dir}/af_structures/{name}.pickle", "wb") as f:
+                pickle.dump(struct, file=f)
+        except ValueError as e:
+            print(f'Error with sequence {name} - {e}')
 
     # calculate RMSD values between alphafold output and apo / holo conformers
     if af_output_dir is not None:
