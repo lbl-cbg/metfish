@@ -81,7 +81,6 @@ def get_Pr(structure, structure_id="", dmax=None, step=0.5):
 
     return r, p
 
-
 def get_alphafold_atom_positions(fname: str):
     """ Use alphafold protein module to convert pdb file to alphafold's atomic position representation
 
@@ -236,3 +235,25 @@ def get_lddt(fname_predicted, fname_true):
     true_pos_mask = np.array([[[1]] * np.shape(coords_true)[1]])
 
     return np.asarray(lddt.lddt(coords_predicted, coords_true, true_pos_mask))[0]
+
+def extract_seq(pdb_input,output_path):
+    """
+    Args:
+        pdb_input   : The path to the PDB to extract sequence.
+                      The PDB must only contain a single chain. 
+                      pdbfixer is a good tool to prepare PDB for this function
+        output_path : The path to store the output fasta file.
+                      Example: /location/to/store/PDB.fasta
+    Returns:
+        There is no return for this function. The sequence will be written 
+        as a fasta file in the give location.
+    """
+    pdb_name=os.path.basename(pdb_input).split(".")[0]
+    counter=1
+    for record in SeqIO.parse(pdb_input,"pdb-atom"):
+        if counter > 1:
+            raise ValueError("More than 1 Chain is in the file {}".format(pdb_input))
+        else:
+            new_seq_record = SeqRecord(record.seq, id=pdb_name, description='')
+            SeqIO.write(new_seq_record, output_path ,"fasta")
+        counter+=1

@@ -1,0 +1,35 @@
+CoDNaS Auto Processing
+
+Description:
+CoDNaS is a database comparing diverse conformation of the identical proteins.
+It provides a good interface for pairwise comparison but lack of useful APIs especially for downloading files.
+
+The best approach for now is to manually download a tsv file containing the PDB ID of all conformers for a single protein.
+Thus, this script is used to automatically download the PDB from RCSB based on the list and then convert them to SAXS curve and P(r) curve with FOXS and RAW APIs.
+
+Problems:
+1.FOXS will add the hydration layer to the PDB and then calculated the SAXS curve. This may eliminate some difference between conformations
+2.Each PDB may contain multiple conformers which is similar to each other. I am trying to extract them and generate individual SAXS curve which is still under testing. 
+
+Files:
+1BZF_A.hclusterRMSD.txt - raw data downloaded from CoDNaS database
+full_clean.sh - main script
+batch_download_seq_new.sh - modified RCSB script to download PDB and sequence files
+SAXS_to_pr.py - convert the PDB file to SAXS and P(r)
+
+Dependency: 
+Anaconda -
+Request python library -
+RAW API -
+FOXS -
+
+Usage:
+bash full_clean.sh
+-f <file>: the input file containing a list of pdb files downloaded from CoDNaS
+-o  <dir>: the output dir
+
+Example
+mkdir test
+bash full_clean.sh -f ./1BZF_A.hclusterRMSD.txt -o ./test
+
+The script will create 4 folders ./test/pdb ./test/sequence ./test/saxs_q (raw SAXS) ./test/saxs_r (P(r) in csv)  
