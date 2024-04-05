@@ -3,3 +3,6 @@ pandas
 numpy
 scipy
 periodictable
+seaborn
+matplotlib
+alphafold-colabfold
