@@ -1,7 +1,6 @@
 from Bio import SeqIO
 from Bio.SeqRecord import SeqRecord
 import argparse
-import os
 
 def extract_seq(pdb_input,output_path):
     pdb_name=pdb_input.split(".")[0]

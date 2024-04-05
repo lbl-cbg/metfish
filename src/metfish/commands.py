@@ -4,12 +4,8 @@ import sys
 
 import pandas as pd
 
-from .utils import get_Pr
-<<<<<<< HEAD
+from .utils import get_Pr, extract_seq
 from .preprocess import prep_conformer_pairs
-=======
-from .utils import extract_seq
->>>>>>> main
 
 def get_Pr_cli(argv=None):
 
