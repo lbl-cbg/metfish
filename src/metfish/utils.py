@@ -1,13 +1,13 @@
 import os
 import warnings
+import numpy as np
 
 from Bio.PDB.MMCIFParser import FastMMCIFParser
 from Bio.PDB.PDBParser import PDBParser
-import numpy as np
+from biopandas.pdb import PandasPdb
+from pathlib import Path
 from periodictable import elements
 from scipy.spatial.distance import pdist, squareform
-from Bio import SeqIO
-from Bio.SeqRecord import SeqRecord
 
 
 n_elec_df = {el.symbol: el.number for el in elements}
@@ -72,7 +72,7 @@ def get_Pr(structure, structure_id="", dmax=None, step=0.5):
 
     return r, p
 
-def extract_seq(pdb_input,output_path):
+def extract_seq(pdb_input, output_path):
     """
     Args:
         pdb_input   : The path to the PDB to extract sequence.
@@ -84,12 +84,13 @@ def extract_seq(pdb_input,output_path):
         There is no return for this function. The sequence will be written 
         as a fasta file in the give location.
     """
-    pdb_name=os.path.basename(pdb_input).split(".")[0]
-    counter=1
-    for record in SeqIO.parse(pdb_input,"pdb-atom"):
-        if counter > 1:
-            raise ValueError("More than 1 Chain is in the file {}".format(pdb_input))
-        else:
-            new_seq_record = SeqRecord(record.seq, id=pdb_name, description='')
-            SeqIO.write(new_seq_record, output_path ,"fasta")
-        counter+=1
+    seq_df = PandasPdb().read_pdb(pdb_input).amino3to1(record='ATOM', fillna='X')
+    pdb_name = Path(pdb_input).stem
+
+    if len(seq_df['chain_id'].unique()) > 1:
+        raise ValueError(f"More than 1 Chain is in the file {pdb_input}")
+
+    seq = ''.join(seq_df['residue_name'])
+    seq = "\n".join([f">{pdb_name}", seq])
+    with open(output_path, "w") as f:
+        f.write(seq)
