@@ -74,6 +74,6 @@ if [ -f "$file" ]; then
         exit
    fi
    calc-pr "${pdb_loc}/fixed_${filename}" -o "${pr_loc}/${filename}.pr.csv"
-   python PDBtoSeq.py  -f "${pdb_loc}/fixed_${filename}" -o "${seq_loc}/${filename}.fasta" 
+   extract-seq -f "${pdb_loc}/fixed_${filename}" -o "${seq_loc}/${filename}.fasta"
    echo ${file} >> ${outdir}/complete.txt
 fi
