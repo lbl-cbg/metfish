@@ -45,7 +45,7 @@ def get_Pr_cli(argv=None):
 def extract_seq_cli(argv=None):
     
     parser = argparse.ArgumentParser(
-    description = '''Extract Sequence from PDB using the BioPython API.
+    description = '''Extract Sequence from PDB file.
     The output will be stored at the current directory as a fasta file.''' )
     
     parser.add_argument('-f', '--filename', required=True, help="input pdb file")
