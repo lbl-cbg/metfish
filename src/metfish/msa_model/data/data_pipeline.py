@@ -28,6 +28,40 @@ from openfold.np import residue_constants, protein
 
 FeatureDict = Mapping[str, np.ndarray]
 
+def empty_template_feats(n_res):
+    return {
+        "template_aatype": np.zeros(
+            (0, n_res, len(residue_constants.restypes_with_x_and_gap)),
+            np.float32
+        ),
+        "template_all_atom_mask": np.zeros(
+            (0, n_res, residue_constants.atom_type_num), np.float32
+        ),
+        "template_all_atom_positions": np.zeros(
+            (0, n_res, residue_constants.atom_type_num, 3), np.float32
+        ),
+        "template_domain_names": np.array([''.encode()], dtype=object),
+        "template_sequence": np.array([''.encode()], dtype=object),
+        "template_sum_probs": np.zeros((0, 1), dtype=np.float32),
+    }
+
+def make_template_features(
+    input_sequence: str,
+    hits: Sequence[Any],
+    template_featurizer: Any,
+) -> FeatureDict:
+    hits_cat = sum(hits.values(), [])
+    if(len(hits_cat) == 0 or template_featurizer is None):
+        template_features = empty_template_feats(len(input_sequence))
+    else:
+        templates_result = template_featurizer.get_templates(
+            query_sequence=input_sequence,
+            hits=hits_cat,
+        )
+        template_features = templates_result.features
+
+    return template_features
+
 def make_sequence_features(
     sequence: str, description: str, num_res: int
 ) -> FeatureDict:
@@ -49,6 +83,49 @@ def make_sequence_features(
     )
     return features
 
+def unify_template_features(
+    template_feature_list: Sequence[FeatureDict]
+) -> FeatureDict:
+    out_dicts = []
+    seq_lens = [fd["template_aatype"].shape[1] for fd in template_feature_list]
+    for i, fd in enumerate(template_feature_list):
+        out_dict = {}
+        n_templates, n_res = fd["template_aatype"].shape[:2]
+        for k,v in fd.items():
+            seq_keys = [
+                "template_aatype",
+                "template_all_atom_positions",
+                "template_all_atom_mask",
+            ]
+            if(k in seq_keys):
+                new_shape = list(v.shape)
+                assert(new_shape[1] == n_res)
+                new_shape[1] = sum(seq_lens)
+                new_array = np.zeros(new_shape, dtype=v.dtype)
+
+                if(k == "template_aatype"):
+                    new_array[..., residue_constants.HHBLITS_AA_TO_ID['-']] = 1
+
+                offset = sum(seq_lens[:i])
+                new_array[:, offset:offset + seq_lens[i]] = v
+                out_dict[k] = new_array
+            else:
+                out_dict[k] = v
+
+        chain_indices = np.array(n_templates * [i])
+        out_dict["template_chain_index"] = chain_indices
+
+        if(n_templates != 0):
+            out_dicts.append(out_dict)
+
+    if(len(out_dicts) > 0):
+        out_dict = {
+            k: np.concatenate([od[k] for od in out_dicts]) for k in out_dicts[0]
+        }
+    else:
+        out_dict = empty_template_feats(sum(seq_lens))
+
+    return out_dict
 
 def make_mmcif_features(
     mmcif_object: mmcif_parsing.MmcifObject, chain_id: str
@@ -563,7 +640,7 @@ class DataPipeline:
         if os.path.isfile(saxs_path):
             pr_df = pd.read_csv(saxs_path)
         else:
-             raise ValueError("No SAXS data available for given input")
+            raise ValueError("No SAXS data available for given input")
         
         pr = pr_df['P(r)'].values
         pr = pr if len(pr) <= pad_length else pr[:pad_length]
@@ -571,7 +648,7 @@ class DataPipeline:
                            (0, pad_length-len(pr)), 
                            constant_values=(0, 0))
 
-        return dict(saxs=pr_padded.astype(np.float32))  # TODO - why is this
+        return dict(saxs=pr_padded.astype(np.float32))
     
     def process_pdb_feats(
         self,

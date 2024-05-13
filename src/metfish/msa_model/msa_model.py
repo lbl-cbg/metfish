@@ -9,7 +9,6 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
 from torch.utils.data import Dataset, DataLoader
 
-from openfold.data.data_transforms import make_atom14_masks
 from openfold.utils.import_weights import import_jax_weights_
 from openfold.utils.lr_schedulers import AlphaFoldLRScheduler
 from openfold.np import residue_constants
@@ -141,7 +140,8 @@ class MSASAXSModel(pl.LightningModule):
             # model.state_dict() contains references to model weights rather
             # than copies. Therefore, we need to clone them before calling 
             # load_state_dict().
-            clone_param = lambda t: t.detach().clone()
+            def clone_param(t):
+              return t.detach().clone()
             self.cached_weights = tensor_tree_map(clone_param, self.model.state_dict())
             self.model.load_state_dict(self.ema.state_dict()["params"])
         
@@ -244,7 +244,7 @@ class MSASAXSModel(pl.LightningModule):
     def on_load_checkpoint(self, checkpoint):
         ema = checkpoint["ema"]
         if(not self.model.template_config.enabled):
-            ema["params"] = {k:v for k,v in ema["params"].items() if not "template" in k}
+            ema["params"] = {k:v for k,v in ema["params"].items() if  "template" not in k}
         self.ema.load_state_dict(ema)
 
     def on_save_checkpoint(self, checkpoint):
@@ -271,10 +271,8 @@ if __name__ == "__main__":
     saxs_dir = f"{data_dir}/saxs_r"
     os.environ["MODEL_DIR"] = "/pscratch/sd/s/smprince/projects/alphaflow/src/alphaflow/working_dir"
 
-    # ckpt_path = "/pscratch/sd/s/smprince/projects/openfold/openfold/resources/openfold_params/initial_training.pt"
-    # ckpt_path = "/global/cfs/cdirs/m3513/metfish/alphaflow_weights/alphaflow_pdb_base_202402.pt" # TODO - switch alphaflow checkpoint for openfold version
     ckpt_path = None
-    jax_param_path = "/pscratch/sd/s/smprince/projects/alphaflow/params_model_1.npz"
+    jax_param_path = "/pscratch/sd/s/smprince/projects/alphaflow/params_model_1.npz"  # these are the original AF weights
     resume_model_weights_only = False
     deterministic = False
 
