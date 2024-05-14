@@ -54,7 +54,7 @@ class MSASAXSDataset(Dataset):
       saxs_features = self.data_pipeline._process_saxs_feats(f'{self.saxs_dir}/{item.name}.pdb.pr.csv')
 
       # pdb data
-      pdb_features = self.data_pipeline.process_pdb_feats(f'{self.pdb_dir}/fixed_{item.name}.pdb')
+      pdb_features = self.data_pipeline.process_pdb_feats(f'{self.pdb_dir}/fixed_{item.name}.pdb', is_distillation=False)
       data = {**sequence_feats, **msa_features, **saxs_features, **pdb_features}
 
       feats = self.feature_pipeline.process_features(data)
@@ -265,7 +265,7 @@ if __name__ == "__main__":
     metfish_dir = "/global/cfs/cdirs/m3513/metfish"
     data_dir = f"{metfish_dir}/PDB70_verB_fixed_data/result"
     msa_dir = f"{metfish_dir}/PDB70_verB_fixed_data/result_subset/"
-    training_csv = f'{msa_dir}/input_training.csv'  # was input.csv in apo_holo_data
+    training_csv = f'{msa_dir}/input_training.csv'
     val_csv = f'{msa_dir}/input_validation.csv'
     pdb_dir = f"{data_dir}/pdb"
     saxs_dir = f"{data_dir}/saxs_r"
@@ -287,7 +287,6 @@ if __name__ == "__main__":
     # set up training and test datasets and dataloaders
     train_dataset = MSASAXSDataset(data_config, training_csv, msa_dir=msa_dir, saxs_dir=saxs_dir, pdb_dir=pdb_dir)
     val_dataset = MSASAXSDataset(data_config, val_csv, msa_dir=msa_dir, saxs_dir=saxs_dir, pdb_dir=pdb_dir)
-    train_dataset[0]
 
     train_loader = DataLoader(train_dataset, batch_size=2, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=2, shuffle=False)
@@ -306,7 +305,7 @@ if __name__ == "__main__":
                             )],
                         check_val_every_n_epoch=1,)  # TODO - add default_root_dir?
 
-    # load exisitng weights    
+    # load existing weights
     if jax_param_path:
         msasaxsmodel.load_from_jax(jax_param_path)
         logging.info(f"Successfully loaded JAX parameters at {jax_param_path}...")
@@ -319,5 +318,4 @@ if __name__ == "__main__":
         ) # need to initialize EMA this way at the beginning
 
     # fit the model
-    trainer.fit(model=msasaxsmodel, train_dataloaders=train_loader, ckpt_path=ckpt_path)
-    # trainer.fit(model=msasaxsmodel, train_dataloaders=train_loader, val_dataloaders=val_loader, ckpt_path=ckpt_path)
+    trainer.fit(model=msasaxsmodel, train_dataloaders=train_loader, val_dataloaders=val_loader, ckpt_path=ckpt_path)
