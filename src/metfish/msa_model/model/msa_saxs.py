@@ -1,16 +1,9 @@
 
-import os
 import time
 import torch
-import logging
-import pandas as pd
 import pytorch_lightning as pl
-import wandb
 
-from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
-from torch.utils.data import Dataset, DataLoader
-
+# from openfold.utils.logger import PerformanceLoggingCallback
 from openfold.utils.import_weights import import_jax_weights_
 from openfold.utils.lr_schedulers import AlphaFoldLRScheduler
 from openfold.np import residue_constants
@@ -20,53 +13,7 @@ from openfold.utils.superimposition import superimpose
 from openfold.utils.exponential_moving_average import ExponentialMovingAverage
 from openfold.utils.tensor_utils import tensor_tree_map
 
-from metfish.msa_model.config import model_config
-from metfish.msa_model.data.data_pipeline import DataPipeline
-from metfish.msa_model.data.feature_pipeline import FeaturePipeline
 from metfish.msa_model.model.alphafold_saxs import AlphaFoldSAXS
-
-
-# create dataset
-class MSASAXSDataset(Dataset): 
-
-  def __init__(self, config, path, data_dir=None, pdb_dir=None, msa_dir=None, saxs_dir=None):
-      self.pdb_chains = pd.read_csv(path, index_col='name')#.sort_index()
-      self.data_dir = data_dir
-      self.msa_dir = msa_dir
-      self.pdb_dir = pdb_dir
-      self.saxs_dir = saxs_dir
-      self.data_pipeline = DataPipeline(template_featurizer=None)
-      self.feature_pipeline = FeaturePipeline(config) 
-      
-  def __len__(self):
-      return len(self.pdb_chains)
-  
-  def __getitem__(self, idx):
-      item = self.pdb_chains.iloc[idx]
-      
-      # sequence data
-      sequence_feats = self.data_pipeline.process_str(item.seqres, item.name)
-      
-      # msa data
-      msa_id = item.msa_id if hasattr(item, 'msa_id') else item.name
-      msa_features = self.data_pipeline._process_msa_feats(f'{self.msa_dir}/{msa_id}', item.seqres, alignment_index=None)
-      # NOTE - could also manipulate the clustering process here
-
-      # saxs data
-      saxs_features = self.data_pipeline._process_saxs_feats(f'{self.saxs_dir}/{item.name}.pdb.pr.csv')
-
-      # pdb data
-      pdb_features = self.data_pipeline.process_pdb_feats(f'{self.pdb_dir}/fixed_{item.name}.pdb', is_distillation=False)
-      data = {**sequence_feats, **msa_features, **saxs_features, **pdb_features}
-
-      feats = self.feature_pipeline.process_features(data)
-
-      feats["batch_idx"] = torch.tensor(
-            [idx for _ in range(feats["aatype"].shape[-1])],
-            dtype=torch.int64,
-            device=feats["aatype"].device) 
-              
-      return feats
 
 # define the lightning module for training
 class MSASAXSModel(pl.LightningModule):
@@ -91,20 +38,20 @@ class MSASAXSModel(pl.LightningModule):
             self.log(
                 f"{phase}/{loss_name}", 
                 indiv_loss, 
-                on_step=train, on_epoch=(not train), logger=True,
+                on_step=train, on_epoch=(not train), logger=True, sync_dist=True
             )
 
             if(train):
                 self.log(
                     f"{phase}/{loss_name}_epoch",
                     indiv_loss,
-                    on_step=False, on_epoch=True, logger=True,
+                    on_step=False, on_epoch=True, logger=True, sync_dist=True
                 )
 
                 # save saxs msa attention weights
-                for name, params in self.named_parameters():
-                    if "saxs_msa_attention" in name:
-                        wandb.log({f"params/{name}": wandb.Histogram(params.cpu().detach().numpy()), "epoch": self.current_epoch})
+                # for name, params in self.named_parameters():
+                #     if "saxs_msa_attention" in name:
+                #         wandb.log({f"params/{name}": wandb.Histogram(params.cpu().detach().numpy()), "epoch": self.current_epoch})
                 #        self.logger.experiment.add_histogram(f'weights_and_biases/{name}', params, self.current_epoch) # use this for TensorBoard
 
 
@@ -119,10 +66,10 @@ class MSASAXSModel(pl.LightningModule):
             self.log(
                 f"{phase}/{k}",
                 torch.mean(v),
-                on_step=False, on_epoch=True, logger=True
+                on_step=False, on_epoch=True, logger=True, sync_dist=True
             )
         
-        self.log('dur', time.time() - self.last_log_time)
+        self.log('dur', time.time() - self.last_log_time, sync_dist=True)
         self.last_log_time = time.time()
 
     def training_step(self, batch):
@@ -266,73 +213,3 @@ class MSASAXSModel(pl.LightningModule):
         import_jax_weights_(
                 self.model, jax_path, version='model_3'
         )
-
-
-if __name__ == "__main__":
-    # set up data paths and configuration
-    metfish_dir = "/global/cfs/cdirs/m3513/metfish"
-    data_dir = f"{metfish_dir}/PDB70_verB_fixed_data/result"
-    msa_dir = f"{metfish_dir}/PDB70_verB_fixed_data/result_subset/"
-    training_csv = f'{msa_dir}/input_training.csv'
-    val_csv = f'{msa_dir}/input_validation.csv'
-    pdb_dir = f"{data_dir}/pdb"
-    saxs_dir = f"{data_dir}/saxs_r"
-    working_dir = "/pscratch/sd/s/smprince/projects/metfish/model_outputs"
-    ckpt_path = f"{working_dir}/checkpoints"
-    jax_param_path = "/pscratch/sd/s/smprince/projects/alphaflow/params_model_1.npz"  # these are the original AF weights
-    
-    resume_ckpt = False
-    resume_model_weights_only = False
-    deterministic = False
-
-    config = model_config('initial_training', train=True, low_prec=True) 
-    if deterministic:
-        config.data.eval.masked_msa_replace_fraction = 0.0
-        config.model.global_config.deterministic = True
-    data_config = config.data
-    data_config.common.use_templates = False
-    data_config.common.max_recycling_iters = 0
-
-    # set up training and test datasets and dataloaders
-    train_dataset = MSASAXSDataset(data_config, training_csv, msa_dir=msa_dir, saxs_dir=saxs_dir, pdb_dir=pdb_dir)
-    val_dataset = MSASAXSDataset(data_config, val_csv, msa_dir=msa_dir, saxs_dir=saxs_dir, pdb_dir=pdb_dir)
-
-    train_loader = DataLoader(train_dataset, batch_size=2, shuffle=True, num_workers=4)
-    val_loader = DataLoader(val_dataset, batch_size=2, shuffle=False, num_workers=4)
-
-    # initialize model and trainer
-    msasaxsmodel = MSASAXSModel(config)
-    # logger = CSVLogger(f"{working_dir}/lightning_logs", name="msasaxs")
-    # logger = TensorBoardLogger(f"{working_dir}/lightning_logs", name="msasaxs")
-    logger = WandbLogger(name="msasaxs", save_dir=f"{working_dir}/lightning_logs")
-    trainer = pl.Trainer(accelerator="gpu", 
-                        max_epochs=100, 
-                        gradient_clip_val=1.,
-                        limit_train_batches=1.0, 
-                        limit_val_batches=1.0,
-                        callbacks=[ModelCheckpoint(
-                                dirpath=f"{working_dir}/checkpoints", 
-                                save_top_k=-1,
-                                every_n_epochs=25,
-                            )],
-                        check_val_every_n_epoch=1,
-                        logger=logger,
-                        log_every_n_steps=1,
-                        default_root_dir=working_dir)
-
-    # load existing weights
-    if jax_param_path:
-        msasaxsmodel.load_from_jax(jax_param_path)
-        logging.info(f"Successfully loaded JAX parameters at {jax_param_path}...")
-    
-    if resume_model_weights_only:
-        msasaxsmodel.load_state_dict(torch.load(ckpt_path, map_location='cpu')['state_dict'], strict=False)
-        ckpt_path = None
-        msasaxsmodel.ema = ExponentialMovingAverage(
-            model=msasaxsmodel.model, decay=config.ema.decay
-        ) # need to initialize EMA this way at the beginning
-    
-    ckpt_path = None if not resume_ckpt else ckpt_path
-
-    # fit the model
-    trainer.fit(model=msasaxsmodel, train_dataloaders=train_loader, val_dataloaders=val_loader, ckpt_path=ckpt_path)
