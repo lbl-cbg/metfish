@@ -587,7 +587,7 @@ config = mlc.ConfigDict(
                 "weight": 1.0,
             },
             "plddt_loss": {
-                "min_resolution": 0.1,
+                "min_resolution": -1.0,  # allows examples with unknown resolution
                 "max_resolution": 3.0,
                 "cutoff": 15.0,
                 "no_bins": 50,
