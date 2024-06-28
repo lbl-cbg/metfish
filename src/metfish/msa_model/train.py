@@ -6,6 +6,7 @@ import logging
 import pytorch_lightning as pl
 import wandb
 
+from pytorch_lightning.profilers import AdvancedProfiler, PyTorchProfiler, SimpleProfiler
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import CSVLogger, WandbLogger
 from torch.utils.data import DataLoader
@@ -15,6 +16,9 @@ from openfold.utils.exponential_moving_average import ExponentialMovingAverage
 from metfish.msa_model.config import model_config
 from metfish.msa_model.data.data_modules import MSASAXSDataset
 from metfish.msa_model.model.msa_saxs import MSASAXSModel
+
+# gives a speedup on Ampere-class GPUs
+torch.set_float32_matmul_precision("high")
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -68,8 +72,16 @@ parser.add_argument(
     help="Whether to use deterministic algorithm for msa fraction replacement"
 )
 parser.add_argument(
+    "--profile", default=False, action='store_true',
+    help="Whether to use a profiler or not"
+)
+parser.add_argument(
     "--checkpoint_every_n_epochs", type=int, default=1,
-    help="""Whether to checkpoint at the end of every training epoch"""
+    help="""Number of epochs after which to checkpoint the model"""
+)
+parser.add_argument(
+    "--checkpoint_every_n_steps", type=int, default=250,
+    help="""Number of training steps after which to checkpoint the model"""
 )
 parser.add_argument(
     "--resume_from_ckpt", default=False, action='store_true',
@@ -106,7 +118,9 @@ def main(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/result"
          validate_only=False,
          jax_param_path="/pscratch/sd/s/smprince/projects/alphaflow/params_model_1.npz",
          deterministic=False,
+         profile=False,
          checkpoint_every_n_epochs=1,
+         checkpoint_every_n_steps=250,
          resume_from_ckpt=False,
          precision='bf16-mixed',
          max_epochs=25,
@@ -142,17 +156,30 @@ def main(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/result"
     # initialize model
     msasaxsmodel = MSASAXSModel(config)
 
-    # add logging and  callbacks
+    # add logging
     loggers = [CSVLogger(f"{output_dir}/lightning_logs", name="msasaxs")]
     if use_wandb:
         os.environ["WANDB__SERVICE_WAIT"] = "300"
         os.environ["WANDB_MODE"] = "offline"
         # wandb.init()
         loggers.append(WandbLogger(name="msasaxs", save_dir=f"{output_dir}/lightning_logs"))
+
+    # add callbacks
     callbacks = [ModelCheckpoint(dirpath=f"{output_dir}/checkpoints", 
                                 save_top_k=-1,
-                                every_n_epochs=checkpoint_every_n_epochs,)]
-    
+                                every_n_epochs=checkpoint_every_n_epochs,),
+                ModelCheckpoint(dirpath=f"{output_dir}/checkpoints",
+                                save_top_k=-1,
+                                every_n_train_steps=checkpoint_every_n_steps,),               ]
+
+    # add profiler
+    if profile:
+        profiler = PyTorchProfiler(dirpath=f"{output_dir}/lightning_logs/pytorch_profiler", filename='profile_trace.txt')
+        # profiler = AdvancedProfiler(dirpath=f"{output_dir}/lightning_logs/advanced_profiler", filename='profile_trace')
+        # profiler = SimpleProfiler(dirpath=f"{output_dir}/lightning_logs/simple_profiler", filename='profile_trace')
+    else:
+        profiler = None
+
     # initialize trainer
     trainer = pl.Trainer(accelerator="gpu", 
                          strategy=strategy,
@@ -169,6 +196,7 @@ def main(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/result"
                             num_nodes=num_nodes,
                             fast_dev_run=fast_dev_run, 
                             precision=precision,
+                            profiler=profiler,
                             )
 
     # load existing weights
@@ -196,11 +224,7 @@ def main(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/result"
         trainer.fit(model=msasaxsmodel, train_dataloaders=train_loader, val_dataloaders=val_loader, ckpt_path=ckpt_path)
 
 if __name__ == "__main__":
-
     args = parser.parse_args()
     args_dict = vars(args)
     main(**args_dict)
-
-    # main(fast_dev_run=True, validate_only=True)
     # main(fast_dev_run=True, validate_only=True, resume_from_ckpt=True, ckpt_path="/pscratch/sd/s/smprince/projects/metfish/model_outputs/checkpoints/epoch=0-step=523.ckpt")
-    # main(fast_dev_run=True, validate_only=True, resume_from_ckpt=True, ckpt_path="/pscratch/sd/s/smprince/projects/openfold/openfold/resources/openfold_params/finetuning_2.pt", resume_model_weights_only=True)
