@@ -22,7 +22,6 @@ class MSASAXSModel(pl.LightningModule):
         self.save_hyperparameters()
         self.config = config
         self.model = AlphaFoldSAXS(config)
-        # self.model = MSASAXSModule(config)
         self.loss = AlphaFoldLoss(config.loss)
         self.ema = ExponentialMovingAverage(
                 model=self.model, decay=config.ema.decay
@@ -31,6 +30,11 @@ class MSASAXSModel(pl.LightningModule):
         self.last_lr_step = -1
 
         self.last_log_time = time.time()
+
+        # freeze alphafold model
+        for name, param in self.model.named_parameters():
+            if "saxs_msa_attention" not in name:
+                param.requires_grad = False
 
     def _log(self, loss_breakdown, batch, outputs, train=True):
         phase = "train" if train else "val"
