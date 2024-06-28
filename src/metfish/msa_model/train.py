@@ -2,11 +2,9 @@
 import argparse
 import os
 import torch
-import logging
 import pytorch_lightning as pl
-import wandb
 
-from pytorch_lightning.profilers import AdvancedProfiler, PyTorchProfiler, SimpleProfiler
+from pytorch_lightning.profilers import PyTorchProfiler #, SimpleProfiler, AdvancedProfiler
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import CSVLogger, WandbLogger
 from torch.utils.data import DataLoader
