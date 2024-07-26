@@ -78,7 +78,7 @@ parser.add_argument(
     help="""Number of epochs after which to checkpoint the model"""
 )
 parser.add_argument(
-    "--checkpoint_every_n_steps", type=int, default=250,
+    "--checkpoint_every_n_steps", type=int, default=500,
     help="""Number of training steps after which to checkpoint the model"""
 )
 parser.add_argument(
@@ -90,7 +90,7 @@ parser.add_argument(
     help='Sets precision, lower precision improves runtime performance.',
 )
 parser.add_argument(
-    "--max_epochs", type=int, default=25,
+    "--max_epochs", type=int, default=100,
 )
 parser.add_argument(
     "--log_every_n_steps", type=int, default=25,
@@ -118,10 +118,10 @@ def main(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/result"
          deterministic=False,
          profile=False,
          checkpoint_every_n_epochs=1,
-         checkpoint_every_n_steps=250,
+         checkpoint_every_n_steps=500,
          resume_from_ckpt=False,
          precision='bf16-mixed',
-         max_epochs=25,
+         max_epochs=100,
          log_every_n_steps=25,
          num_sanity_val_steps=0,
          reload_dataloaders_every_n_epochs=1
@@ -172,7 +172,7 @@ def main(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/result"
 
     # add profiler
     if profile:
-        profiler = PyTorchProfiler(dirpath=f"{output_dir}/lightning_logs/pytorch_profiler", filename='profile_trace.txt')
+        profiler = PyTorchProfiler(dirpath=f"{output_dir}/lightning_logs/pytorch_profiler", filename='profile_trace.txt', emit_nvtx=True)
         # profiler = AdvancedProfiler(dirpath=f"{output_dir}/lightning_logs/advanced_profiler", filename='profile_trace')
         # profiler = SimpleProfiler(dirpath=f"{output_dir}/lightning_logs/simple_profiler", filename='profile_trace')
     else:
@@ -225,4 +225,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
     args_dict = vars(args)
     main(**args_dict)
-    # main(fast_dev_run=True, validate_only=True, resume_from_ckpt=True, ckpt_path="/pscratch/sd/s/smprince/projects/metfish/model_outputs/checkpoints/epoch=0-step=523.ckpt")
+    # main(fast_dev_run=True, resume_from_ckpt=True, ckpt_path="/pscratch/sd/s/smprince/projects/metfish/model_outputs/checkpoints/epoch=3-step=2092.ckpt")
