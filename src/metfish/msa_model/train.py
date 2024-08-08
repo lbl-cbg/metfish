@@ -101,7 +101,9 @@ parser.add_argument(
 parser.add_argument(
     "--reload_dataloaders_every_n_epochs", type=int, default=1,
 )
-
+parser.add_argument(
+    "--unfreeze_af_weights", default=False, action='store_true',
+)
 
 def main(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/result",
          output_dir="/pscratch/sd/s/smprince/projects/metfish/model_outputs",
@@ -124,7 +126,8 @@ def main(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/result"
          max_epochs=100,
          log_every_n_steps=25,
          num_sanity_val_steps=0,
-         reload_dataloaders_every_n_epochs=1
+         reload_dataloaders_every_n_epochs=1,
+         unfreeze_af_weights=False,
         ):
     
     # set up data paths and configuration
@@ -152,7 +155,7 @@ def main(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/result"
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=16)
 
     # initialize model
-    msasaxsmodel = MSASAXSModel(config)
+    msasaxsmodel = MSASAXSModel(config, unfreeze_af_weights=unfreeze_af_weights)
 
     # add logging
     loggers = [CSVLogger(f"{output_dir}/lightning_logs", name="msasaxs")]

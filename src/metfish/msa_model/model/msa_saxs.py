@@ -17,7 +17,7 @@ from metfish.msa_model.model.alphafold_saxs import AlphaFoldSAXS
 
 # define the lightning module for training
 class MSASAXSModel(pl.LightningModule):
-    def __init__(self, config):
+    def __init__(self, config, unfreeze_af_weights=False):
         super().__init__()
         self.save_hyperparameters()
         self.config = config
@@ -32,9 +32,10 @@ class MSASAXSModel(pl.LightningModule):
         self.last_log_time = time.time()
 
         # freeze alphafold model
-        for name, param in self.model.named_parameters():
-            if "saxs_msa_attention" not in name:
-                param.requires_grad = False
+        if not unfreeze_af_weights:
+            for name, param in self.model.named_parameters():
+                if "saxs_msa_attention" not in name:
+                    param.requires_grad = False
 
     def _log(self, loss_breakdown, batch, outputs, train=True):
         phase = "train" if train else "val"
