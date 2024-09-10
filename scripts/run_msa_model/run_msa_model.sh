@@ -4,6 +4,7 @@
 #SBATCH --constraint=gpu
 #SBATCH --ntasks 64 
 #SBATCH --ntasks-per-node 4 
+#SBATCH --cpus-per-task 32
 #SBATCH --gpus-per-node 4
 #SBATCH --account=m4704_g
 #SBATCH -o ./%x_logs/%j.log
