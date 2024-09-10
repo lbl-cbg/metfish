@@ -17,16 +17,18 @@ from metfish.msa_model.model.alphafold_saxs import AlphaFoldSAXS
 
 # define the lightning module for training
 class MSASAXSModel(pl.LightningModule):
-    def __init__(self, config, unfreeze_af_weights=False):
+    def __init__(self, config, unfreeze_af_weights=False, training=True):
         super().__init__()
         self.save_hyperparameters()
         self.config = config
         self.model = AlphaFoldSAXS(config)
-        self.loss = AlphaFoldLoss(config.loss)
-        self.ema = ExponentialMovingAverage(
-                model=self.model, decay=config.ema.decay
-            )
-        self.cached_weights = None
+        self.training = training
+        if training:
+            self.loss = AlphaFoldLoss(config.loss)
+            self.ema = ExponentialMovingAverage(
+                    model=self.model, decay=config.ema.decay
+                )
+            self.cached_weights = None
         self.last_lr_step = -1
 
         self.last_log_time = time.time()
@@ -36,6 +38,9 @@ class MSASAXSModel(pl.LightningModule):
             for name, param in self.model.named_parameters():
                 if "saxs_msa_attention" not in name:
                     param.requires_grad = False
+
+    def forward(self, batch):
+        return self.model(batch)
 
     def _log(self, loss_breakdown, batch, outputs, train=True):
         phase = "train" if train else "val"
@@ -218,3 +223,10 @@ class MSASAXSModel(pl.LightningModule):
         import_jax_weights_(
                 self.model, jax_path, version='model_3'
         )
+
+    def load_ema_weights(self):
+        # model.state_dict() contains references to model weights rather
+        # than copies. Therefore, we need to clone them before calling
+        # load_state_dict().
+        self.cached_weights = tensor_tree_map(lambda t: t.detach().clone(), self.model.state_dict())
+        self.model.load_state_dict(self.ema.state_dict()["params"])

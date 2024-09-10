@@ -9,12 +9,15 @@ from metfish.msa_model.data.feature_pipeline import FeaturePipeline
 
 class MSASAXSDataset(Dataset): 
 
-  def __init__(self, config, path, data_dir=None, pdb_dir=None, msa_dir=None, saxs_dir=None):
+  def __init__(self, config, path, data_dir=None, pdb_dir=None, pdb_prefix=None, pdb_ext=None, msa_dir=None, saxs_dir=None, saxs_ext=None):
       self.pdb_chains = pd.read_csv(path, index_col='name')#.sort_index()
       self.data_dir = data_dir
       self.msa_dir = msa_dir
       self.pdb_dir = pdb_dir
+      self.pdb_prefix = pdb_prefix if pdb_prefix is not None else "fixed_"
+      self.pdb_ext = pdb_ext or ".pdb"
       self.saxs_dir = saxs_dir
+      self.saxs_ext = saxs_ext or '.pdb.pr.csv'  # default
       self.data_pipeline = DataPipeline(template_featurizer=None)
       self.feature_pipeline = FeaturePipeline(config) 
       
@@ -33,10 +36,11 @@ class MSASAXSDataset(Dataset):
       # NOTE - could also manipulate the clustering process here
 
       # saxs data
-      saxs_features = self.data_pipeline._process_saxs_feats(f'{self.saxs_dir}/{item.name}.pdb.pr.csv')
+      saxs_features = self.data_pipeline._process_saxs_feats(f'{self.saxs_dir}/{item.name}{self.saxs_ext}')
 
-      # pdb data
-      pdb_features = self.data_pipeline.process_pdb_feats(f'{self.pdb_dir}/fixed_{item.name}.pdb', is_distillation=False)
+      # pdb data - will only load during training
+      pdb_features = self.data_pipeline.process_pdb_feats(f'{self.pdb_dir}/{self.pdb_prefix}{item.name}{self.pdb_ext}', is_distillation=False)
+    
       data = {**sequence_feats, **msa_features, **saxs_features, **pdb_features}
 
       feats = self.feature_pipeline.process_features(data)
@@ -45,6 +49,12 @@ class MSASAXSDataset(Dataset):
             [idx for _ in range(feats["aatype"].shape[-1])],
             dtype=torch.int64,
             device=feats["aatype"].device) 
-              
+
       return feats
+
+  def get_name(self, idx):
+      item = self.pdb_chains.iloc[idx]
+      
+      return item.name
+
   

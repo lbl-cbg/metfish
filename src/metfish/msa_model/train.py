@@ -151,8 +151,8 @@ def main(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/result"
     train_dataset = MSASAXSDataset(data_config, training_csv, msa_dir=msa_dir, saxs_dir=saxs_dir, pdb_dir=pdb_dir)
     val_dataset = MSASAXSDataset(data_config, val_csv, msa_dir=msa_dir, saxs_dir=saxs_dir, pdb_dir=pdb_dir)
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=16)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=16)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=8)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=8)
 
     # initialize model
     msasaxsmodel = MSASAXSModel(config, unfreeze_af_weights=unfreeze_af_weights)
@@ -228,4 +228,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
     args_dict = vars(args)
     main(**args_dict)
-    # main(fast_dev_run=True, resume_from_ckpt=True, ckpt_path="/pscratch/sd/s/smprince/projects/metfish/model_outputs/checkpoints/epoch=3-step=2092.ckpt")
+    # main(fast_dev_run=True, resume_from_ckpt=True, ckpt_path="/pscratch/sd/s/smprince/projects/metfish/model_outputs/checkpoints/msa_saxs_model_ckpts/epoch=36-step=19000.ckpt")
