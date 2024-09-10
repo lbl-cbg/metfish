@@ -1,7 +1,6 @@
 import os
 import warnings
 import numpy as np
-import pandas as pd
 
 from Bio.PDB.MMCIFParser import FastMMCIFParser
 from Bio.PDB.PDBParser import PDBParser
@@ -10,14 +9,9 @@ from pathlib import Path
 from periodictable import elements
 from scipy.spatial.distance import pdist, squareform
 
-from Bio.PDB.MMCIFParser import FastMMCIFParser
-from Bio.PDB.PDBParser import PDBParser
 from Bio.SVDSuperimposer import SVDSuperimposer
 from Bio import SeqUtils, Align
 from Bio.PDB import PDBIO
-
-from periodictable import elements
-from scipy.spatial.distance import pdist, squareform
 
 n_elec_df = {el.symbol: el.number for el in elements}
 amino_acids = [a.upper() for a in SeqUtils.IUPACData.protein_letters_3to1.keys()]
