@@ -115,7 +115,14 @@ def align_sequences(ref_df, query_df):
         aligner = Align.PairwiseAligner()
         alignments = aligner.align(ref_seq, query_seq)
 
-        ref_idx, query_idx = alignments[0].indices[:, ~(alignments[0].indices == -1).any(axis=0)]
+        alignment = alignments[0]
+        
+        ref_idx = []
+        query_idx = []
+        for ref_start, ref_end in alignment.aligned[0]:
+            ref_idx.extend(range(ref_start, ref_end))
+        for query_start, query_end in alignment.aligned[1]:
+            query_idx.extend(range(query_start, query_end))
         
         ref_df = ref_df.iloc[ref_idx]
         query_df = query_df.iloc[query_idx]
