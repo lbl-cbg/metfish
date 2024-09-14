@@ -28,14 +28,16 @@ if run_elnemo_data:
     test_csv_name_elnemo = "input_elnemo_data.csv"
     output_dir_elnemo = "/pscratch/sd/s/smprince/projects/metfish/model_evaluation/msa_saxs_model/elnemo_data"
 
-def create_model_comparison_df(pairs, names, comparisons, data_dir, output_dir):
+def create_model_comparison_df(pairs, names, comparisons, data_dir, output_dir, pair_data_df):
     # compile information for each apo/holo pair into a df
     data = []
     for name in names:
         # get pair info, skip if one of the pairs was in the training dataset
         name_alt = [(set(p) - {name}).pop() for p in pairs if name in p][0] 
-        if name_alt not in test_data_df['name'].to_list():
+        if name_alt not in pair_data_df['name'].to_list():
             continue
+        if 'modes' in name_alt:
+            name, name_alt = name_alt, name
         
         # load apo holo data
         rmsd_apo_holo = apo_holo_df.query('apo_id == @name | holo_id == @name')['rmsd_apo_holo']
@@ -43,10 +45,10 @@ def create_model_comparison_df(pairs, names, comparisons, data_dir, output_dir):
 
         # load alignment data
         fnames = dict(true=f"{data_dir}/pdbs/{name}_atom_only.pdb",
-                    true_alt=f"{data_dir}/pdbs/{name_alt}_atom_only.pdb",
-                    out=f"{output_dir}/{name}_MSASAXS_unrelaxed.pdb",
-                    out_alt=f"{output_dir}/{name_alt}_MSASAXS_unrelaxed.pdb",
-                    out_af=f"{output_dir}/{name}_AlphaFold_unrelaxed.pdb",)
+                      true_alt=f"{data_dir}/pdbs/{name_alt}_atom_only.pdb",
+                      out=f"{output_dir}/{name}_MSASAXS_unrelaxed.pdb",
+                      out_alt=f"{output_dir}/{name_alt}_MSASAXS_unrelaxed.pdb",
+                      out_af=f"{output_dir}/{name}_AlphaFold_unrelaxed.pdb",)
         for (a, b) in comparisons:
             # load pdb data
             pdb_df_a = PandasPdb().read_pdb(fnames[a]).df['ATOM']
@@ -72,7 +74,7 @@ def create_model_comparison_df(pairs, names, comparisons, data_dir, output_dir):
 
             # add comparisons
             data.append(dict(name=name,
-                            name_alt=name_alt,
+                             name_alt=name_alt,
                             type_a=a,
                             type_b=b,
                             comparison=comparison,
@@ -197,7 +199,7 @@ if run_elnemo_data:
 
     # calculate saxs curves for the input sequences
     for name in input_names:
-        pdb_path = f"{data_dir_elnemo}/pdbs/{name}.pdb"
+        pdb_path = f"{data_dir_elnemo}/pdbs/{name}_atom_only.pdb"
         r, p = get_Pr(pdb_path, name, None, 0.5)
         out = f"{data_dir_elnemo}/saxs_r/{name}_atom_only.csv"
         pd.DataFrame({"r": r, "P(r)": p}).to_csv(out, index=False)
