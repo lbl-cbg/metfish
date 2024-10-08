@@ -21,14 +21,21 @@ class MSASAXSModel(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
         self.config = config
+
+        #add saxs model config to config file later
+        self.saxs_model = HarmonicPrior(input_shape=512, hidden_features=64, output_dim = config.data.train.crop_size)
+
         self.model = AlphaFoldSAXS(config)
         self.training = training
         if training:
             self.loss = AlphaFoldLoss(config.loss)
+            self.saxs_loss = PriorLoss()
             self.ema = ExponentialMovingAverage(
                     model=self.model, decay=config.ema.decay
                 )
             self.cached_weights = None
+        
+        # What it this for?
         self.last_lr_step = -1
 
         self.last_log_time = time.time()
@@ -38,6 +45,43 @@ class MSASAXSModel(pl.LightningModule):
             for name, param in self.model.named_parameters():
                 if "saxs_msa_attention" not in name:
                     param.requires_grad = False
+
+        # May need to add saxs model weights.
+
+    def _add_noise(self, batch):
+        '''
+        This function uses SAXS to add the noise for the diffusion process.
+        '''
+        N = batch['aatype'].shape[1]
+        device = batch['aatype'].device
+        batch_dims = batch['seq_length'].shape
+        
+        noisy , raw_noise= self.saxs_model(batch['saxs'])
+        #noisy = noisy.to(device)
+        #raw_noise = raw_noise.to(device)
+        noisy = noisy.to(device)
+        #noisy = rmsdalign(batch['pseudo_beta'], noisy, weights=batch['pseudo_beta_mask']).detach()
+
+        try:
+            # R3 to SE3
+            noisy = rmsdalign(batch['pseudo_beta'], noisy, weights=batch['pseudo_beta_mask']).detach() # ?!?!
+        except:
+            raise ValueError('SVD failed to converge!')
+            #logger.warning('SVD failed to converge!')
+            #batch['t'] = torch.ones(batch_dims, device=device)
+            #return
+        
+        # Randomly sample a time embedding is probably not a good idea.
+        t = torch.rand(batch_dims, device=device)
+        noisy_beta = (1 - t[:,None,None]) * batch['pseudo_beta'] + t[:,None,None] * noisy
+    
+        pseudo_beta_dists = torch.sum((noisy_beta.unsqueeze(-2) - noisy_beta.unsqueeze(-3)) ** 2, dim=-1)**0.5
+        
+        batch_copy = {**batch}
+        batch_copy['noised_pseudo_beta_dists'] = pseudo_beta_dists
+        batch_copy['t'] = t
+        
+        return batch_copy, raw_noise
 
     def forward(self, batch):
         return self.model(batch)

@@ -18,93 +18,6 @@ from metfish.msa_model.model.msa_saxs import MSASAXSModel
 # gives a speedup on Ampere-class GPUs
 torch.set_float32_matmul_precision("high")
 
-parser = argparse.ArgumentParser()
-parser.add_argument(
-    "data_dir", type=str,
-    help="Directory containing training pdb, saxs, and msa data",
-)
-parser.add_argument(
-    "output_dir", type=str,
-    help='''Directory in which to output checkpoints, logs, etc. Ignored
-            if not on rank 0''',
-)
-parser.add_argument(
-    "--ckpt_path", type=str,
-    help='''Path to a model checkpoint from which to resume training.''',
-)
-parser.add_argument(
-    "--gpus_per_node", type=int, default=1, help='Number of gpus per node (will use all 4 per node on perlmutter).'
-)
-parser.add_argument(
-    "--num_nodes", type=int, default=1, help='Number of nodes to use for training.'
-)
-parser.add_argument(
-    "--batch_size", type=int, default=2, help='Batch size for each training step'
-)
-parser.add_argument(
-    "--seed", type=int, default=1,
-    help="Random seed"
-)
-parser.add_argument(
-    "--use_wandb", action="store_true", default=True,
-    help="Whether to log metrics to Weights & Biases"
-)
-parser.add_argument(
-    "--resume_model_weights_only", default=False, action='store_true',
-    help="Whether to load just model weights as opposed to training state"
-)
-parser.add_argument(
-    "--fast_dev_run", default=False, action='store_true',
-    help="Whether to run a fast dev run of a single batch for testing purposes"
-)
-parser.add_argument(
-    "--validate_only", default=False, action='store_true',
-    help='''Runs only validation step, useful to collect metrics from new model / checkpoint''',
-)
-parser.add_argument(
-    "--jax_param_path", type=str, default="/pscratch/sd/s/smprince/projects/alphaflow/params_model_1.npz",  # these are the original AF weights,
-    help="""Path to an .npz JAX parameter file with which to initialize the model"""
-)
-parser.add_argument(
-    "--deterministic", default=False, action='store_true',
-    help="Whether to use deterministic algorithm for msa fraction replacement"
-)
-parser.add_argument(
-    "--profile", default=False, action='store_true',
-    help="Whether to use a profiler or not"
-)
-parser.add_argument(
-    "--checkpoint_every_n_epochs", type=int, default=1,
-    help="""Number of epochs after which to checkpoint the model"""
-)
-parser.add_argument(
-    "--checkpoint_every_n_steps", type=int, default=500,
-    help="""Number of training steps after which to checkpoint the model"""
-)
-parser.add_argument(
-    "--resume_from_ckpt", default=False, action='store_true',
-    help="Whether to use a model checkpoint from which to restore training state"
-)
-parser.add_argument(
-    "--precision", type=str, default='bf16-mixed',
-    help='Sets precision, lower precision improves runtime performance.',
-)
-parser.add_argument(
-    "--max_epochs", type=int, default=100,
-)
-parser.add_argument(
-    "--log_every_n_steps", type=int, default=25,
-)
-parser.add_argument(
-    "--num_sanity_val_steps", type=int, default=0,
-)
-parser.add_argument(
-    "--reload_dataloaders_every_n_epochs", type=int, default=1,
-)
-parser.add_argument(
-    "--unfreeze_af_weights", default=False, action='store_true',
-)
-
 def main(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/result",
          output_dir="/pscratch/sd/s/smprince/projects/metfish/model_outputs",
          ckpt_path=None,
@@ -225,6 +138,92 @@ def main(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/result"
         trainer.fit(model=msasaxsmodel, train_dataloaders=train_loader, val_dataloaders=val_loader, ckpt_path=ckpt_path)
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "data_dir", type=str,
+        help="Directory containing training pdb, saxs, and msa data",
+    )
+    parser.add_argument(
+        "output_dir", type=str,
+        help='''Directory in which to output checkpoints, logs, etc. Ignored
+                if not on rank 0''',
+    )
+    parser.add_argument(
+        "--ckpt_path", type=str,
+        help='''Path to a model checkpoint from which to resume training.''',
+    )
+    parser.add_argument(
+        "--gpus_per_node", type=int, default=1, help='Number of gpus per node (will use all 4 per node on perlmutter).'
+    )
+    parser.add_argument(
+        "--num_nodes", type=int, default=1, help='Number of nodes to use for training.'
+    )
+    parser.add_argument(
+        "--batch_size", type=int, default=2, help='Batch size for each training step'
+    )
+    parser.add_argument(
+        "--seed", type=int, default=1,
+        help="Random seed"
+    )
+    parser.add_argument(
+        "--use_wandb", action="store_true", default=True,
+        help="Whether to log metrics to Weights & Biases"
+    )
+    parser.add_argument(
+        "--resume_model_weights_only", default=False, action='store_true',
+        help="Whether to load just model weights as opposed to training state"
+    )
+    parser.add_argument(
+        "--fast_dev_run", default=False, action='store_true',
+        help="Whether to run a fast dev run of a single batch for testing purposes"
+    )
+    parser.add_argument(
+        "--validate_only", default=False, action='store_true',
+        help='''Runs only validation step, useful to collect metrics from new model / checkpoint''',
+    )
+    parser.add_argument(
+        "--jax_param_path", type=str, default="/pscratch/sd/s/smprince/projects/alphaflow/params_model_1.npz",  # these are the original AF weights,
+        help="""Path to an .npz JAX parameter file with which to initialize the model"""
+    )
+    parser.add_argument(
+        "--deterministic", default=False, action='store_true',
+        help="Whether to use deterministic algorithm for msa fraction replacement"
+    )
+    parser.add_argument(
+        "--profile", default=False, action='store_true',
+        help="Whether to use a profiler or not"
+    )
+    parser.add_argument(
+        "--checkpoint_every_n_epochs", type=int, default=1,
+        help="""Number of epochs after which to checkpoint the model"""
+    )
+    parser.add_argument(
+        "--checkpoint_every_n_steps", type=int, default=500,
+        help="""Number of training steps after which to checkpoint the model"""
+    )
+    parser.add_argument(
+        "--resume_from_ckpt", default=False, action='store_true',
+        help="Whether to use a model checkpoint from which to restore training state"
+    )
+    parser.add_argument(
+        "--precision", type=str, default='bf16-mixed',
+        help='Sets precision, lower precision improves runtime performance.',
+    )
+    parser.add_argument(
+        "--max_epochs", type=int, default=100,
+    )
+    parser.add_argument(
+        "--log_every_n_steps", type=int, default=25,
+    )
+    parser.add_argument(
+        "--num_sanity_val_steps", type=int, default=0,
+    )
+    parser.add_argument(
+        "--reload_dataloaders_every_n_epochs", type=int, default=1,
+    )
+    parser.add_argument(
+        "--unfreeze_af_weights", default=False, action='store_true',
+    )
     args = parser.parse_args()
     args_dict = vars(args)
     main(**args_dict)
