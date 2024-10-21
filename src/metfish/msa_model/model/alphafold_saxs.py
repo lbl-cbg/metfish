@@ -119,6 +119,75 @@ class SAXSMSAAttention(nn.Module):
 
     return add(msa, o, inplace=inplace_safe)
   
+class SAXSPairAttention(nn.Module):
+  def __init__(self,
+            c_q: int,
+            c_k: int,
+            c_v: int,
+            c_hidden: int,
+            no_heads: int,):
+    super(SAXSPairAttention, self).__init__()
+
+    self.c_hidden = c_hidden
+    self.no_heads = no_heads
+
+    self.layer_norm_q = LayerNorm(c_q)
+    self.layer_norm_k = LayerNorm(c_k)
+
+    self.linear_q = Linear(c_q, c_hidden * no_heads)
+    self.linear_k = Linear(c_k, c_hidden * no_heads)
+    self.linear_v = Linear(c_v, c_hidden * no_heads)
+    self.linear_o = Linear(c_hidden * no_heads, c_k)
+    self.sigmoid = nn.Sigmoid()  # TODO - do I want to use this for gating?
+
+  def forward(self,
+            pair: torch.Tensor,
+            saxs: torch.Tensor,
+            inplace_safe: bool = False,):
+    # b is batch size, r is # residues, r is # residues, s is # saxs bins
+
+    # Normalize inputs
+    q_x = self.layer_norm_q(saxs)  # [b, s]
+    kv_x = self.layer_norm_k(pair)  #  [b, r, r, c]
+
+    # Expand dimensions of query for compatibility with key_value
+    q_x = q_x.unsqueeze(1).unsqueeze(1)  # [b, 1, 1, s]
+
+    # Apply linear transformations
+    # [*, Q/K/V, H * C_hidden]
+    q = self.linear_q(q_x)  # [b, 1, 1, h*c_hidden]
+    k = self.linear_k(kv_x)  # [b, r, r, h*c_hidden]
+    v = self.linear_v(kv_x)  # [b, r, r, h*c_hidden]
+
+    # reshape for multiple heads
+    # [*, Q/K, H, C_hidden]
+    q = q.view(q.shape[:-1] + (self.no_heads, -1)) # [b, 1, 1, h, c_hidden]
+    k = k.view(k.shape[:-1] + (self.no_heads, -1)) # [b, r, r, h, c_hidden]
+    v = v.view(v.shape[:-1] + (self.no_heads, -1)) # [b, r, r, h, c_hidden]
+
+    # scale query values
+    q /= math.sqrt(self.c_hidden)
+
+    # permute last two dims of key for multiplication with query
+    k = k.transpose(-2, -1)
+
+    # Compute attention weights
+    a = torch.matmul(q, k)
+    a = F.softmax(a, dim=-1)  # [b, r, r, h, h]
+
+    # Compute weighted sum of values
+    o = torch.matmul(a, v)  # [b, r, r, h, c]
+
+    # Flatten final dims
+    # [*, Q, H * C_hidden]
+    o = o.reshape(o.shape[:-2] + (-1,))
+
+    # Transform for output
+    # [*, Q, C_k]
+    o = self.linear_o(o)
+
+    return add(pair, o, inplace=inplace_safe)
+
 class AlphaFoldSAXS(nn.Module):
     """
     Alphafold 2.
@@ -173,6 +242,9 @@ class AlphaFoldSAXS(nn.Module):
         self.saxs_msa_attention = SAXSMSAAttention(
             **self.config["saxs_msa_attention"]
             )
+        self.saxs_pair_attention = SAXSPairAttention(
+            **self.config["saxs_pair_attention"]
+        )
         
         self.evoformer = EvoformerStack(
             **self.config["evoformer_stack"],
@@ -448,6 +520,10 @@ class AlphaFoldSAXS(nn.Module):
         m = self.saxs_msa_attention(msa=m, 
                                     saxs=feats['saxs'], 
                                     inplace_safe=inplace_safe)
+        
+        z = self.saxs_pair_attention(pair=z,
+                                     saxs=feats['saxs'],
+                                     inplace_safe=inplace_safe)
 
         # Run MSA + pair embeddings through the trunk of the network
         # m: [*, S, N, C_m]

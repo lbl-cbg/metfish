@@ -13,7 +13,7 @@ from Bio.SVDSuperimposer import SVDSuperimposer
 from Bio import SeqUtils, Align
 from Bio.PDB import PDBIO
 
-from prody import parsePDB, ANM, GNM, extendModel, traverseMode, writePDB,
+from prody import parsePDB, ANM, GNM, extendModel, traverseMode, writePDB
 
 n_elec_df = {el.symbol: el.number for el in elements}
 amino_acids = [a.upper() for a in SeqUtils.IUPACData.protein_letters_3to1.keys()]
@@ -293,7 +293,7 @@ def lddt(predicted_points,
   return score
 
 # select alpha carbons
-def sample_conformers(fname, n_modes=3, n_confs=10, rmsd=None, type='GNM'):
+def sample_conformers(fname, n_modes=3, n_confs=10, rmsd=None, type='ANM'):
     protein = parsePDB(str(fname))
     calphas = protein.select('calpha')
 

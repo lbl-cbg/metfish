@@ -400,6 +400,13 @@ config = mlc.ConfigDict(
                 "c_hidden": 32,
                 "no_heads": 8,
             },
+            "saxs_pair_attention": {
+                "c_q": c_x,
+                "c_k": c_z,
+                "c_v": c_z,
+                "c_hidden": 32,
+                "no_heads": 8,
+            },
             "recycling_embedder": {
                 "c_z": c_z,
                 "c_m": c_m,
@@ -618,6 +625,12 @@ config = mlc.ConfigDict(
                 "eps": eps,  # 1e-8,
                 "weight": 0.,
                 "enabled": tm_enabled,
+            },
+            "saxs_loss": {
+                "dmax": 150,  # TODO - check this
+                "step": 0.5,  # TODO - check this
+                "eps": eps,  # 1e-10,
+                "weight": 0.01, # TODO - decide on this weight
             },
             "eps": eps,
         },

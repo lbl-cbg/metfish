@@ -8,12 +8,13 @@ from openfold.utils.import_weights import import_jax_weights_
 from openfold.utils.lr_schedulers import AlphaFoldLRScheduler
 from openfold.np import residue_constants
 from openfold.utils.validation_metrics import (drmsd, gdt_ts, gdt_ha,)
-from openfold.utils.loss import lddt_ca, AlphaFoldLoss
+from openfold.utils.loss import lddt_ca
 from openfold.utils.superimposition import superimpose
 from openfold.utils.exponential_moving_average import ExponentialMovingAverage
 from openfold.utils.tensor_utils import tensor_tree_map
 
 from metfish.msa_model.model.alphafold_saxs import AlphaFoldSAXS
+from metfish.msa_model.utils.loss import AlphaFoldLossWithSAXS
 
 # define the lightning module for training
 class MSASAXSModel(pl.LightningModule):
@@ -24,7 +25,7 @@ class MSASAXSModel(pl.LightningModule):
         self.model = AlphaFoldSAXS(config)
         self.training = training
         if training:
-            self.loss = AlphaFoldLoss(config.loss)
+            self.loss = AlphaFoldLossWithSAXS(config.loss)
             self.ema = ExponentialMovingAverage(
                     model=self.model, decay=config.ema.decay
                 )
