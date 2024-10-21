@@ -1587,7 +1587,7 @@ def saxs_loss(all_atom_pred_pos: torch.Tensor,
     # get the coordinates and weights for each atom
     pred_saxs, true_saxs = [], []
     for (pred_pos, true_pos) in zip(all_atom_pred_pos, all_atom_positions):  # where pred_pos is a single item in the batch
-        # get the p(r) from the model ouptut
+        # get the p(r) from the model output
         p_pred, _ = compute_saxs(pred_pos, step=step, dmax=dmax)
 
         # get the ground truth p(r) from the SAXS input model
