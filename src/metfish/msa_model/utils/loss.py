@@ -13,64 +13,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from functools import partial
 import logging
 import ml_collections
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.distributions.bernoulli import Bernoulli
 from typing import Dict, Optional, Tuple
 from scipy.spatial.distance import pdist, squareform
 from periodictable import elements
 
 from openfold.np import residue_constants
-from openfold.utils import feats
 from openfold.utils.rigid_utils import Rotation, Rigid
 from openfold.utils.tensor_utils import (
     tree_map,
     tensor_tree_map,
     masked_mean,
     permute_final_dims,
-    batched_gather,
 )
 
 n_elec_df = {el.symbol: el.number for el in elements}
-
-# Copyright 2021 AlQuraishi Laboratory
-# Copyright 2021 DeepMind Technologies Limited
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-from functools import partial
-import logging
-import ml_collections
-import numpy as np
-import torch
-import torch.nn as nn
-from torch.distributions.bernoulli import Bernoulli
-from typing import Dict, Optional, Tuple
-
-from openfold.np import residue_constants
-from openfold.utils import feats
-from openfold.utils.rigid_utils import Rotation, Rigid
-from openfold.utils.tensor_utils import (
-    tree_map,
-    tensor_tree_map,
-    masked_mean,
-    permute_final_dims,
-    batched_gather,
-)
 
 
 def softmax_cross_entropy(logits, labels):
@@ -516,7 +477,6 @@ def lddt_loss(
     eps: float = 1e-10,
     **kwargs,
 ) -> torch.Tensor:
-    n = all_atom_mask.shape[-2]
 
     ca_pos = residue_constants.atom_order["CA"]
     all_atom_pred_pos = all_atom_pred_pos[..., ca_pos, :]
@@ -1195,7 +1155,6 @@ def find_structural_violations(
         overlap_tolerance=clash_overlap_tolerance,
         bond_length_tolerance_factor=violation_tolerance_factor,
     )
-    atom14_atom_exists = batch["atom14_atom_exists"]
     atom14_dists_lower_bound = atom14_pred_positions.new_tensor(
         restype_atom14_bounds["lower_bound"]
     )[batch["aatype"]]
@@ -1265,13 +1224,18 @@ def find_structural_violations_np(
     atom14_pred_positions: np.ndarray,
     config: ml_collections.ConfigDict,
 ) -> Dict[str, np.ndarray]:
-    to_tensor = lambda x: torch.tensor(x)
+    
+    def to_tensor(x):
+        return torch.tensor(x)
+    
     batch = tree_map(to_tensor, batch, np.ndarray)
     atom14_pred_positions = to_tensor(atom14_pred_positions)
 
     out = find_structural_violations(batch, atom14_pred_positions, **config)
 
-    to_np = lambda x: np.array(x)
+    def to_np(x):
+        return np.array(x)
+    
     np_out = tensor_tree_map(to_np, out)
 
     return np_out
@@ -1362,14 +1326,19 @@ def compute_violation_metrics_np(
     atom14_pred_positions: np.ndarray,
     violations: Dict[str, np.ndarray],
 ) -> Dict[str, np.ndarray]:
-    to_tensor = lambda x: torch.tensor(x)
+
+    def to_tensor(x):
+        return torch.tensor(x)
+
     batch = tree_map(to_tensor, batch, np.ndarray)
     atom14_pred_positions = to_tensor(atom14_pred_positions)
     violations = tree_map(to_tensor, violations, np.ndarray)
 
     out = compute_violation_metrics(batch, atom14_pred_positions, violations)
 
-    to_np = lambda x: np.array(x)
+    def to_np(x):
+        return np.array(x)
+
     return tree_map(to_np, out, torch.Tensor)
 
 
