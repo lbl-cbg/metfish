@@ -3,6 +3,7 @@ __pycache__
 *.pyc
 *.egg-info/
 *.swp
+*.log
 .DS_Store
 .vscode/
-*.log
+**/wandb/*
