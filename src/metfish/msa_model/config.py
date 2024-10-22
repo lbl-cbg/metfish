@@ -627,10 +627,10 @@ config = mlc.ConfigDict(
                 "enabled": tm_enabled,
             },
             "saxs_loss": {
-                "dmax": 150,  # TODO - check this
-                "step": 0.5,  # TODO - check this
+                "dmax": 256,  # pad to 512 for input data, use 512/step 
+                "step": 0.5,
                 "eps": eps,  # 1e-10,
-                "weight": 0.01, # TODO - decide on this weight
+                "weight": 0.5, # TODO - test 0.3, 0.5, 1.0
             },
             "eps": eps,
         },

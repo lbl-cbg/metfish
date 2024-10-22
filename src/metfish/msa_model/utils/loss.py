@@ -1531,20 +1531,26 @@ def masked_msa_loss(logits, true_msa, bert_mask, eps=1e-8, **kwargs):
 
     return loss
 
-def compute_saxs(all_atom_pos, step=0.5, dmax=None):
+def compute_saxs(all_atom_pos: torch.Tensor, 
+                 all_atom_mask: torch.Tensor,
+                 step=0.5, 
+                 dmax=None):
     # get a mapping between atom types (37) and electron numbers
     atom_types = residue_constants.atom_types
     n_elec_df = {el.symbol: el.number for el in elements}
     elec_numbers = [n_elec_df[at[0]] for at in atom_types]
     elec_numbers = torch.tensor(elec_numbers, dtype=torch.float32)
 
+    # get weights and coords, apply mask to only use atoms that are present
     expanded_elec_numbers = elec_numbers.unsqueeze(0).expand(*all_atom_pos.shape[:-1])
+    mask = all_atom_mask.view(-1)
 
-    coords = all_atom_pos.reshape(-1, 3).detach().numpy()
-    weights = expanded_elec_numbers.reshape(-1)
-    # TODO - address empty values / apply atom mask here if needed
+    coords = all_atom_pos.view(-1, 3)[mask > 0.5, :]
+    weights = expanded_elec_numbers.reshape(-1)[mask > 0.5]
    
     # Calculate distances between each atom
+    coords = coords.cpu().detach().numpy()
+    weights = weights.cpu().detach().numpy()    
     distances = pdist(coords)
 
     # Calculate a weight matrix
@@ -1556,12 +1562,13 @@ def compute_saxs(all_atom_pos, step=0.5, dmax=None):
     if dmax is None:
         dmax = distances.max()
         dmax = np.ceil(dmax / step) * step
-    hist, r = np.histogram(distances, bins=np.arange(0, dmax + 0.1, step), weights=dist_weights)
+    hist, r = np.histogram(distances, bins=np.arange(0, dmax, step), weights=dist_weights)
     p = np.concatenate(([0], hist / hist.sum()))
 
     return torch.tensor(p, dtype=torch.float32), torch.tensor(r, dtype=torch.float32)
 
 def saxs_loss(all_atom_pred_pos: torch.Tensor,
+              all_atom_mask: torch.Tensor,
               all_atom_positions: torch.Tensor,
               step: float = 0.1,
               dmax: float = None,
@@ -1586,12 +1593,12 @@ def saxs_loss(all_atom_pred_pos: torch.Tensor,
 
     # get the coordinates and weights for each atom
     pred_saxs, true_saxs = [], []
-    for (pred_pos, true_pos) in zip(all_atom_pred_pos, all_atom_positions):  # where pred_pos is a single item in the batch
+    for (pred_pos, true_pos, mask) in zip(all_atom_pred_pos, all_atom_positions, all_atom_mask):  # where pred_pos is a single item in the batch
         # get the p(r) from the model output
-        p_pred, _ = compute_saxs(pred_pos, step=step, dmax=dmax)
+        p_pred, _ = compute_saxs(all_atom_pos=pred_pos, all_atom_mask=mask, step=step, dmax=dmax)
 
         # get the ground truth p(r) from the SAXS input model
-        p_true, _ = compute_saxs(true_pos, step=step, dmax=dmax)  # recalculate because small atom order differences might contribute
+        p_true, _ = compute_saxs(all_atom_pos=true_pos, all_atom_mask=mask, step=step, dmax=dmax)  # recalculate because small atom order differences might contribute
         
         # Append the SAXS profiles to the lists
         pred_saxs.append(p_pred)
@@ -1605,10 +1612,7 @@ def saxs_loss(all_atom_pred_pos: torch.Tensor,
     kl_loss = nn.KLDivLoss(reduction="batchmean")
     loss = kl_loss(pred_saxs, true_saxs)
 
-    # Average over the batch dimension
-    mean = torch.mean(loss)
-
-    return mean
+    return loss
 
 class AlphaFoldLossWithSAXS(nn.Module):
     """Aggregation of the various losses described in the supplement"""
