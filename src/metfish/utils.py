@@ -293,7 +293,7 @@ def lddt(predicted_points,
   return score
 
 # select alpha carbons
-def sample_conformers(fname, n_modes=3, n_confs=10, rmsd=None, type='ANM'):
+def sample_conformers(fname, n_modes=2, n_confs=6, rmsd=3.0, type='ANM'):
     protein = parsePDB(str(fname))
     calphas = protein.select('calpha')
 
