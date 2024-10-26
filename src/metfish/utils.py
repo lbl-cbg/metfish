@@ -13,6 +13,8 @@ from Bio.SVDSuperimposer import SVDSuperimposer
 from Bio import SeqUtils, Align
 from Bio.PDB import PDBIO
 
+from prody import parsePDB, ANM, GNM, extendModel, traverseMode, writePDB
+
 n_elec_df = {el.symbol: el.number for el in elements}
 amino_acids = [a.upper() for a in SeqUtils.IUPACData.protein_letters_3to1.keys()]
 
@@ -115,7 +117,14 @@ def align_sequences(ref_df, query_df):
         aligner = Align.PairwiseAligner()
         alignments = aligner.align(ref_seq, query_seq)
 
-        ref_idx, query_idx = alignments[0].indices[:, ~(alignments[0].indices == -1).any(axis=0)]
+        alignment = alignments[0]
+        
+        ref_idx = []
+        query_idx = []
+        for ref_start, ref_end in alignment.aligned[0]:
+            ref_idx.extend(range(ref_start, ref_end))
+        for query_start, query_end in alignment.aligned[1]:
+            query_idx.extend(range(query_start, query_end))
         
         ref_df = ref_df.iloc[ref_idx]
         query_df = query_df.iloc[query_idx]
@@ -282,3 +291,61 @@ def lddt(predicted_points,
   score = norm * (1e-10 + np.sum(dists_to_score * score, axis=reduce_axes))
 
   return score
+
+# select alpha carbons
+def sample_conformers(fname, n_modes=3, n_confs=10, rmsd=None, type='ANM'):
+    protein = parsePDB(str(fname))
+    calphas = protein.select('calpha')
+
+    # perform normal mode analysis
+    if type == 'ANM':
+        anm = ANM('ANM analysis')
+        anm.buildHessian(calphas)  # default values are cutoff=15.0 and gamma=1.0
+        anm.calcModes(n_modes=n_modes, turbo=True)
+
+        # extend the model
+        nm_ext, _ = extendModel(anm, calphas, protein, norm=True)
+    elif type == 'GNM':
+        gnm = GNM('GNM analysis')
+        gnm.buildKirchhoff(calphas)  # default values are cutoff=10.0 and gamma=1.0
+        gnm.calcModes(n_modes=n_modes, turbo=True)
+
+        # extend the model
+        nm_ext, _ = extendModel(gnm, calphas, protein, norm=True)
+
+    # sample conformations along the  nodes
+    # rmsd = len(calphas) * rmsd_ratio  # 0.02 is a potential default value
+    # ens = sampleModes(anm_ext, atoms=protein, n_confs=n_confs, rmsd=rmsd) # random sample (rmsd = avg)
+    for i, mode in enumerate(nm_ext):
+        ens = traverseMode(nm_ext[mode], atoms=protein, n_steps=int(n_confs/2), rmsd=rmsd)  # trajectory along a mode (rmsd = max)
+
+        # write confirmations
+        protein.addCoordset(ens.getCoordsets(), label=f'mode{i}')
+
+    protein.all.setBetas(0)  # I believe these steps are mainly useful if later optimizations are applied
+    protein.ca.setBetas(1)  
+
+    return protein
+
+def write_conformers(out_dir, name, protein):
+    # write the conformations to a pdb file
+    filenames = []
+    last_mode = None
+    conf_idx = 0
+    for i in range(protein.numCoordsets()):
+        mode_label = protein.getCSLabels()[i]
+        curr_mode = mode_label.replace("mode", "")
+        if curr_mode != last_mode:
+            last_mode = curr_mode
+            conf_idx = 0
+        
+        if mode_label == "":
+            filename = str(out_dir / f'{name}.pdb')
+        else:
+            filename = str(out_dir / f'{name}_{mode_label}_conf{conf_idx}.pdb')
+        writePDB(filename, protein, csets=i)
+
+        filenames.append(filename)
+        conf_idx += 1 
+
+    return filenames
