@@ -37,6 +37,7 @@ class MSASAXSDataset(Dataset):
 
       # saxs data
       saxs_features = self.data_pipeline._process_saxs_feats(f'{self.saxs_dir}/{item.name}{self.saxs_ext}')
+      # TODO - account for cropped sequences by processing saxs after other features are processed or excluding seq < 256 length?
 
       # pdb data - will only load during training
       pdb_features = self.data_pipeline.process_pdb_feats(f'{self.pdb_dir}/{self.pdb_prefix}{item.name}{self.pdb_ext}', is_distillation=False)

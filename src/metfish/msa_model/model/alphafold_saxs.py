@@ -68,54 +68,56 @@ class SAXSMSAAttention(nn.Module):
     self.linear_q = Linear(c_q, c_hidden * no_heads)
     self.linear_k = Linear(c_k, c_hidden * no_heads)
     self.linear_v = Linear(c_v, c_hidden * no_heads)
-    self.linear_o = Linear(c_hidden * no_heads, c_k)
+    self.linear_o = Linear(c_hidden * no_heads, c_q)
     self.sigmoid = nn.Sigmoid()  # TODO - do I want to use this for gating?
 
   def forward(self,
               msa: torch.Tensor, 
               saxs: torch.Tensor, 
-              inplace_safe: bool = False,):    
+              inplace_safe: bool = False,):
+
     # b is batch size, m is # msa clusters, r is # residues, s is # saxs bins
+    q_x = msa.view(msa.shape[0], msa.shape[1]*msa.shape[2], msa.shape[3])  # [b, m*r, c]
+    k_x = saxs.unsqueeze(-1)  # [b, s, 1]
 
     # Normalize inputs
-    q_x = self.layer_norm_q(saxs)
-    kv_x = self.layer_norm_k(msa)
+    q_x = self.layer_norm_q(q_x)  # [b, m, r, c]
+    kv_x = self.layer_norm_k(k_x)  # [b, s, 1]
 
-    # Expand dimensions of query for compatibility with key_value
-    q_x = q_x.unsqueeze(1).unsqueeze(1)  # [b, 1, 1, s] 
-
-    # Apply linear transformations
-    # [*, Q/K/V, H * C_hidden]
-    q = self.linear_q(q_x)  # [b, 1, 1, h*c_hidden]
-    k = self.linear_k(kv_x)  # [b, m, r, h*c_hidden]
-    v = self.linear_v(kv_x)  # [b, m, r, h*c_hidden]
+    q = self.linear_q(q_x)  # [b, m*r, h*c_hidden]
+    k = self.linear_k(kv_x)  # [b, s, h*c_hidden]
+    v = self.linear_v(kv_x)  # [b, s, h*c_hidden]
 
     # reshape for multiple heads
-    # [*, Q/K, H, C_hidden]
-    q = q.view(q.shape[:-1] + (self.no_heads, -1)) # [b, 1, 1, h, c_hidden]
-    k = k.view(k.shape[:-1] + (self.no_heads, -1)) # [b, m, r, h, c_hidden]
-    v = v.view(v.shape[:-1] + (self.no_heads, -1)) # [b, m, r, h, c_hidden]
-    
+    q = q.view(q.shape[:-1] + (self.no_heads, -1)) # [b, m*r, h, c_hidden]
+    k = k.view(k.shape[:-1] + (self.no_heads, -1)) # [b, s, h, c_hidden]
+    v = v.view(v.shape[:-1] + (self.no_heads, -1)) # [b, s, h, c_hidden] 
+
+    # transpose heads
+    q = q.transpose(1, 2)  # [b, h, m*r, c_hidden]
+    k = k.transpose(1, 2)  # [b, h, s, c_hidden]
+    v = v.transpose(1, 2)  # [b, h, s, c_hidden]
+
     # scale query values
     q /= math.sqrt(self.c_hidden)
 
     # permute last two dims of key for multiplication with query
-    k = k.transpose(-2, -1)
+    k = k.transpose(-2, -1)  # [b, h, c_hidden, s]
 
     # Compute attention weights
-    a = torch.matmul(q, k)
-    a = F.softmax(a, dim=-1)  # [b, m, r, h, h]
+    a = torch.matmul(q, k)  # [b, h, m*r, s]  # NOTE - large matrix - may need to reduce
+    a = F.softmax(a, dim=-1)  # [b, h, m*r, s]
 
     # Compute weighted sum of values
-    o = torch.matmul(a, v)  # [b, m, r, h, c]
+    o = torch.matmul(a, v)  # [b, h, m*r, c_hidden]
 
     # Flatten final dims
-    # [*, Q, H * C_hidden]
-    o = o.reshape(o.shape[:-2] + (-1,))
+    o = o.transpose(1, 2)  # [b, m*r, h, c_hidden]
+    o = o.reshape(o.shape[:-2] + (-1,))  # [b, m*r, h*c_hidden]
 
     # Transform for output
-    # [*, Q, C_k]
-    o = self.linear_o(o)
+    o = self.linear_o(o)  # [b, m*r, c]
+    o = o.view(msa.shape[:])  # [b, m, r, c]
 
     return add(msa, o, inplace=inplace_safe)
   
@@ -133,58 +135,60 @@ class SAXSPairAttention(nn.Module):
 
     self.layer_norm_q = LayerNorm(c_q)
     self.layer_norm_k = LayerNorm(c_k)
-
+    
     self.linear_q = Linear(c_q, c_hidden * no_heads)
     self.linear_k = Linear(c_k, c_hidden * no_heads)
     self.linear_v = Linear(c_v, c_hidden * no_heads)
-    self.linear_o = Linear(c_hidden * no_heads, c_k)
+    self.linear_o = Linear(c_hidden * no_heads, c_q)
     self.sigmoid = nn.Sigmoid()  # TODO - do I want to use this for gating?
 
   def forward(self,
             pair: torch.Tensor,
             saxs: torch.Tensor,
             inplace_safe: bool = False,):
+
     # b is batch size, r is # residues, r is # residues, s is # saxs bins
+    q_x = pair.view(pair.shape[0], pair.shape[1]*pair.shape[2], pair.shape[3])  # [b, r*r, c]
+    k_x = saxs.unsqueeze(-1)  # [b, s, 1]
 
     # Normalize inputs
-    q_x = self.layer_norm_q(saxs)  # [b, s]
-    kv_x = self.layer_norm_k(pair)  #  [b, r, r, c]
+    q_x = self.layer_norm_q(q_x)  # [b, r, r, c]
+    kv_x = self.layer_norm_k(k_x)  # [b, s, 1]
 
-    # Expand dimensions of query for compatibility with key_value
-    q_x = q_x.unsqueeze(1).unsqueeze(1)  # [b, 1, 1, s]
-
-    # Apply linear transformations
-    # [*, Q/K/V, H * C_hidden]
-    q = self.linear_q(q_x)  # [b, 1, 1, h*c_hidden]
-    k = self.linear_k(kv_x)  # [b, r, r, h*c_hidden]
-    v = self.linear_v(kv_x)  # [b, r, r, h*c_hidden]
+    q = self.linear_q(q_x)  # [b, r*r, h*c_hidden]
+    k = self.linear_k(kv_x)  # [b, s, h*c_hidden]
+    v = self.linear_v(kv_x)  # [b, s, h*c_hidden]
 
     # reshape for multiple heads
-    # [*, Q/K, H, C_hidden]
-    q = q.view(q.shape[:-1] + (self.no_heads, -1)) # [b, 1, 1, h, c_hidden]
-    k = k.view(k.shape[:-1] + (self.no_heads, -1)) # [b, r, r, h, c_hidden]
-    v = v.view(v.shape[:-1] + (self.no_heads, -1)) # [b, r, r, h, c_hidden]
+    q = q.view(q.shape[:-1] + (self.no_heads, -1)) # [b, r*r, h, c_hidden]
+    k = k.view(k.shape[:-1] + (self.no_heads, -1)) # [b, s, h, c_hidden]
+    v = v.view(v.shape[:-1] + (self.no_heads, -1)) # [b, s, h, c_hidden] 
+
+    # transpose heads
+    q = q.transpose(1, 2)  # [b, h, r*r, c_hidden]
+    k = k.transpose(1, 2)  # [b, h, s, c_hidden]
+    v = v.transpose(1, 2)  # [b, h, s, c_hidden]
 
     # scale query values
     q /= math.sqrt(self.c_hidden)
 
     # permute last two dims of key for multiplication with query
-    k = k.transpose(-2, -1)
+    k = k.transpose(-2, -1)  # [b, h, c_hidden, s]
 
     # Compute attention weights
-    a = torch.matmul(q, k)
-    a = F.softmax(a, dim=-1)  # [b, r, r, h, h]
+    a = torch.matmul(q, k)  # [b, h, r*r, s]  # NOTE - large matrix - may need to reduce
+    a = F.softmax(a, dim=-1)  # [b, h, r*r, s]
 
     # Compute weighted sum of values
-    o = torch.matmul(a, v)  # [b, r, r, h, c]
+    o = torch.matmul(a, v)  # [b, h, r*r, c_hidden]
 
     # Flatten final dims
-    # [*, Q, H * C_hidden]
-    o = o.reshape(o.shape[:-2] + (-1,))
+    o = o.transpose(1, 2)  # [b, r*r, h, c_hidden]
+    o = o.reshape(o.shape[:-2] + (-1,))  # [b, r*r, h*c_hidden]
 
     # Transform for output
-    # [*, Q, C_k]
-    o = self.linear_o(o)
+    o = self.linear_o(o)  # [b, r*r, c]
+    o = o.view(pair.shape[:])  # [b, m, r, c]
 
     return add(pair, o, inplace=inplace_safe)
 
