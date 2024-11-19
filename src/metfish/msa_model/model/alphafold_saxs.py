@@ -81,7 +81,7 @@ class SAXSMSAAttention(nn.Module):
     k_x = saxs.unsqueeze(-1)  # [b, s, 1]
 
     # Normalize inputs
-    q_x = self.layer_norm_q(q_x)  # [b, m, r, c]
+    q_x = self.layer_norm_q(q_x)  # [b, m*r, c]
     kv_x = self.layer_norm_k(k_x)  # [b, s, 1]
 
     q = self.linear_q(q_x)  # [b, m*r, h*c_hidden]

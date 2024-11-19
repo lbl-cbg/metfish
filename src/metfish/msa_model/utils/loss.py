@@ -19,7 +19,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 from typing import Dict, Optional, Tuple
-from scipy.spatial.distance import pdist, squareform
 from periodictable import elements
 
 from openfold.np import residue_constants
@@ -1549,27 +1548,31 @@ def compute_saxs(all_atom_pos: torch.Tensor,
     weights = expanded_elec_numbers.reshape(-1)[mask > 0.5]
    
     # Calculate distances between each atom
-    coords = coords.cpu().detach().numpy()
-    weights = weights.cpu().detach().numpy()    
-    distances = pdist(coords)
+    distances = torch.nn.functional.pdist(coords)
 
     # Calculate a weight matrix
-    dist_weights = np.outer(weights, weights)
-    np.fill_diagonal(dist_weights, 0)
-    dist_weights = squareform(dist_weights)
+    dist_weights = torch.outer(weights, weights)
+    i, j = torch.triu_indices(dist_weights.size(0), dist_weights.size(1), offset=1)
+    dist_weights = dist_weights[i, j]
 
-    # Calculate histogram
+    # Calculate histogram (note no torch hist implementation with weights for cuda)
     if dmax is None:
         dmax = distances.max()
         dmax = np.ceil(dmax / step) * step
-    hist, r = np.histogram(distances, bins=np.arange(0, dmax, step), weights=dist_weights)
-    p = np.concatenate(([0], hist / hist.sum()))
+    bin_edges = torch.arange(0, dmax, step, device=distances.device)
+    bin_indices = torch.bucketize(distances, bin_edges, right=False) - 1
 
-    return torch.tensor(p, dtype=torch.float32), torch.tensor(r, dtype=torch.float32)
+    hist_torch = torch.zeros(len(bin_edges) - 1, device=distances.device)
+    for i in range(len(bin_edges) - 1):
+        hist_torch[i] = torch.sum(dist_weights[bin_indices == i])
+
+    p = torch.cat((torch.tensor([0], device=distances.device), hist_torch / hist_torch.sum()))
+
+    return p
 
 def saxs_loss(all_atom_pred_pos: torch.Tensor,
               all_atom_mask: torch.Tensor,
-              all_atom_positions: torch.Tensor,
+              saxs: torch.Tensor,
               step: float = 0.1,
               dmax: float = None,
 
@@ -1580,8 +1583,10 @@ def saxs_loss(all_atom_pred_pos: torch.Tensor,
     Args:
         all_atom_pred_pos:
             [*, N_pts, 37, 3] All-atom predicted atom positions
-        all_atom_positions:
-            [*, N_pts, 37, 3] Ground truth all-atom positions
+        all_atom_mask:
+            [*, N_pts, 37] Mask for all-atom predicted atom positions
+        saxs:
+            [*, N_bins] SAXS profile
         dmax (int, float, None): the max distance between atoms to
                                  consider. default = None i.e. determine
                                  from max distance found in structure
@@ -1590,22 +1595,14 @@ def saxs_loss(all_atom_pred_pos: torch.Tensor,
     Returns:
         [*] loss tensor
     """
-
     # get the coordinates and weights for each atom
-    pred_saxs, true_saxs = [], []
-    for (pred_pos, true_pos, mask) in zip(all_atom_pred_pos, all_atom_positions, all_atom_mask):  # where pred_pos is a single item in the batch
-        # get the p(r) from the model output
-        p_pred, _ = compute_saxs(all_atom_pos=pred_pos, all_atom_mask=mask, step=step, dmax=dmax)
-
-        # get the ground truth p(r) from the SAXS input model
-        p_true, _ = compute_saxs(all_atom_pos=true_pos, all_atom_mask=mask, step=step, dmax=dmax)  # recalculate because small atom order differences might contribute
-        
-        # Append the SAXS profiles to the lists
+    pred_saxs = []
+    for (pred_pos, mask) in zip(all_atom_pred_pos, all_atom_mask):  # where pred_pos is a single item in the batch
+        p_pred = compute_saxs(all_atom_pos=pred_pos, all_atom_mask=mask, step=step, dmax=dmax)
         pred_saxs.append(p_pred)
-        true_saxs.append(p_true)
 
-    pred_saxs = torch.stack(pred_saxs)
-    true_saxs = torch.stack(true_saxs)
+    pred_saxs = torch.stack(pred_saxs).to(saxs.device)
+    true_saxs = saxs
 
     # calculate the KL divergence of the SAXS profiles
     pred_saxs = torch.nn.functional.log_softmax(pred_saxs, dim=1)
