@@ -177,6 +177,36 @@ def get_rmsd(fixed_atom_df, moving_atom_df, atom_types=["CA", "N", "C", "O"]):
     si = superimpose_structures(fixed_atom_df, moving_atom_df, atom_types=atom_types)
     return si.get_rms()
 
+def get_per_residue_rmsd(fixed_atom_df, moving_atom_df, atom_types=["CA", "N", "C", "O"]):
+    fixed_atom_df = clean_pdb_df(fixed_atom_df, atom_types)
+    moving_atom_df = clean_pdb_df(moving_atom_df, atom_types)
+
+    fixed_atom_df, moving_atom_df = align_sequences(fixed_atom_df, moving_atom_df)
+
+    # get coordinates of the atoms
+    fixed_coords = fixed_atom_df[['x_coord', 'y_coord', 'z_coord']].to_numpy()
+    moving_coords = moving_atom_df[['x_coord', 'y_coord', 'z_coord']].to_numpy()
+
+    # superimpose structures
+    si = SVDSuperimposer()
+    si.set(fixed_coords, moving_coords)
+    si.run() # Run the SVD alignment
+
+    fixed_coords = si.reference_coords
+    moving_coords = si.get_transformed()
+    
+    assert len(fixed_coords) == len(fixed_atom_df)
+
+    residue_ids = fixed_atom_df['residue_number'].unique()
+    per_residue_rmsd = []
+    for res_id in residue_ids:
+        atoms_inds = fixed_atom_df.reset_index(drop=True).query(f"residue_number == {res_id}").index
+        rmsd = np.sqrt(np.sum((fixed_coords[atoms_inds, :] - moving_coords[atoms_inds, :]) ** 2, axis=1))
+        per_residue_rmsd.append(rmsd)
+
+    return per_residue_rmsd
+
+
 def get_lddt(predicted_atom_df, true_atom_df, atom_types=["CA", "N", "C", "O"]):
     predicted_atom_df = clean_pdb_df(predicted_atom_df, atom_types)
     true_atom_df = clean_pdb_df(true_atom_df, atom_types)
@@ -327,7 +357,7 @@ def sample_conformers(fname, n_modes=2, n_confs=6, rmsd=3.0, type='ANM'):
 
     return protein
 
-def write_conformers(out_dir, name, protein):
+def write_conformers(out_dir, name, protein, pdb_ext='.pdb'):
     # write the conformations to a pdb file
     filenames = []
     last_mode = None
@@ -342,7 +372,7 @@ def write_conformers(out_dir, name, protein):
         if mode_label == "":
             filename = str(out_dir / f'{name}.pdb')
         else:
-            filename = str(out_dir / f'{name}_{mode_label}_conf{conf_idx}.pdb')
+            filename = str(out_dir / f'{name}_{mode_label}_conf{conf_idx}{pdb_ext}')
         writePDB(filename, protein, csets=i)
 
         filenames.append(filename)
