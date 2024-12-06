@@ -1605,7 +1605,6 @@ def saxs_loss(all_atom_pred_pos: torch.Tensor,
     true_saxs = saxs
 
     # calculate the KL divergence of the SAXS profiles
-    # pred_saxs = torch.nn.functional.log_softmax(pred_saxs, dim=1)
     pred_saxs_log = torch.log((pred_saxs + eps) / (pred_saxs + eps).sum(dim=1, keepdim=True))  # pred_saxs already probabilities so just take log
     kl_loss = nn.KLDivLoss(reduction="batchmean")
     loss = kl_loss(pred_saxs_log, true_saxs)

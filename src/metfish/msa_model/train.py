@@ -131,11 +131,12 @@ def main(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/result"
         ):
     
     # set up data paths and configuration
-    pdb_dir = f"{data_dir}/pdb"
+    pdb_dir = f"{data_dir}/pdbs_simulated"
     saxs_dir = f"{data_dir}/saxs_r"
     msa_dir = f"{data_dir}/msa"
-    training_csv = f'{msa_dir}/input_training.csv'
-    val_csv = f'{msa_dir}/input_validation.csv'
+    csv_dir = f"{data_dir}/scripts"
+    training_csv = f'{csv_dir}/input_training.csv'  # NOTE - this was msa_dir for training v_1
+    val_csv = f'{csv_dir}/input_validation.csv'
 
     pl.seed_everything(seed, workers=True) 
     strategy = "ddp" if (gpus_per_node > 1) or num_nodes > 1 else "auto"
@@ -148,8 +149,8 @@ def main(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/result"
     data_config.common.max_recycling_iters = 0
 
     # set up training and test datasets and dataloaders
-    train_dataset = MSASAXSDataset(data_config, training_csv, msa_dir=msa_dir, saxs_dir=saxs_dir, pdb_dir=pdb_dir)
-    val_dataset = MSASAXSDataset(data_config, val_csv, msa_dir=msa_dir, saxs_dir=saxs_dir, pdb_dir=pdb_dir)
+    train_dataset = MSASAXSDataset(data_config, training_csv, msa_dir=msa_dir, saxs_dir=saxs_dir, pdb_dir=pdb_dir, saxs_ext='.csv', pdb_prefix='')
+    val_dataset = MSASAXSDataset(data_config, val_csv, msa_dir=msa_dir, saxs_dir=saxs_dir, pdb_dir=pdb_dir, saxs_ext='.csv',  pdb_prefix='')
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=8)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=8)
@@ -165,17 +166,17 @@ def main(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/result"
         # wandb.init()
         loggers.append(WandbLogger(name="msasaxs", save_dir=f"{output_dir}/lightning_logs"))
 
-    # add callbacks
     callbacks = [ModelCheckpoint(dirpath=f"{output_dir}/checkpoints", 
                                 save_top_k=-1,
                                 every_n_epochs=checkpoint_every_n_epochs,),
                 ModelCheckpoint(dirpath=f"{output_dir}/checkpoints",
                                 save_top_k=-1,
-                                every_n_train_steps=checkpoint_every_n_steps,),               ]
+                                every_n_train_steps=checkpoint_every_n_steps,),]
 
     # add profiler
     if profile:
-        profiler = PyTorchProfiler(dirpath=f"{output_dir}/lightning_logs/pytorch_profiler", filename='profile_trace.txt', emit_nvtx=True)
+        profiler = PyTorchProfiler(dirpath=f"{output_dir}/lightning_logs/pytorch_profiler", filename='profile_trace.txt')
+        # profiler = PyTorchProfiler(dirpath=f"{output_dir}/lightning_logs/pytorch_profiler", filename='profile_trace.txt', emit_nvtx=True)
         # profiler = AdvancedProfiler(dirpath=f"{output_dir}/lightning_logs/advanced_profiler", filename='profile_trace')
         # profiler = SimpleProfiler(dirpath=f"{output_dir}/lightning_logs/simple_profiler", filename='profile_trace')
     else:
@@ -198,6 +199,7 @@ def main(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/result"
                             fast_dev_run=fast_dev_run, 
                             precision=precision,
                             profiler=profiler,
+                            # max_steps=20
                             )
 
     # load existing weights
@@ -228,4 +230,3 @@ if __name__ == "__main__":
     args = parser.parse_args()
     args_dict = vars(args)
     main(**args_dict)
-    # main(fast_dev_run=True, resume_from_ckpt=True, ckpt_path="/pscratch/sd/s/smprince/projects/metfish/model_outputs/checkpoints/msa_saxs_model_ckpts/epoch=36-step=19000.ckpt")
