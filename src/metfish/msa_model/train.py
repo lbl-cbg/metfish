@@ -149,8 +149,8 @@ def main(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/result"
     data_config.common.max_recycling_iters = 0
 
     # set up training and test datasets and dataloaders
-    train_dataset = MSASAXSDataset(data_config, training_csv, msa_dir=msa_dir, saxs_dir=saxs_dir, pdb_dir=pdb_dir, saxs_ext='.csv', pdb_prefix='')
-    val_dataset = MSASAXSDataset(data_config, val_csv, msa_dir=msa_dir, saxs_dir=saxs_dir, pdb_dir=pdb_dir, saxs_ext='.csv',  pdb_prefix='')
+    train_dataset = MSASAXSDataset(data_config, training_csv, msa_dir=msa_dir, saxs_dir=saxs_dir, pdb_dir=pdb_dir, saxs_ext='.pr.csv', pdb_prefix='')
+    val_dataset = MSASAXSDataset(data_config, val_csv, msa_dir=msa_dir, saxs_dir=saxs_dir, pdb_dir=pdb_dir, saxs_ext='.pr.csv',  pdb_prefix='')
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=8)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=8)

@@ -20,7 +20,8 @@ def inference(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/re
          deterministic=False,
          original_weights=False,
          model_name = 'MSASAXS',
-         test_csv_name = 'input_no_training_data.csv'
+         test_csv_name = 'input_no_training_data.csv',
+         tags=None,
         ):
     
     # set up data paths and configuration
@@ -29,6 +30,7 @@ def inference(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/re
     msa_dir = f"{data_dir}/msa"
     pdb_dir = f"{data_dir}/pdbs"
     test_csv = f'{data_dir}/{test_csv_name}'
+    tags = f'_{tags}' if tags is not None else ''
 
     config = model_config('initial_training', train=False, low_prec=True) 
     if deterministic:
@@ -43,7 +45,7 @@ def inference(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/re
     
     # initialize model
     print('Initializing model...')
-    if model_name == 'MSASAXS':
+    if model_name == 'AFSAXS':
         model = MSASAXSModel(config, training=False)
     elif model_name == 'AlphaFold':
         model = AlphaFoldModel(config)  # wrapper for OpenFold AF
@@ -75,11 +77,11 @@ def inference(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/re
 
             # save unrelaxed protein as pdb file
             unrelaxed_protein = output_to_protein({**out, **batch})
-            with open(f'{output_dir}/{dataset.get_name(i)}_{model_name}_unrelaxed.pdb', 'w') as f:
+            with open(f'{output_dir}/{dataset.get_name(i)}_{model_name}{tags}_unrelaxed.pdb', 'w') as f:
                 f.write(protein.to_pdb(unrelaxed_protein))
 
             # save output dictionary
-            with open(f'{output_dir}/{dataset.get_name(i)}_{model_name}_output.pkl', 'wb') as f:
+            with open(f'{output_dir}/{dataset.get_name(i)}_{model_name}{tags}_output.pkl', 'wb') as f:
                 pickle.dump(out, f)
 
     return None
