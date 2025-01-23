@@ -131,7 +131,7 @@ def main(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/result"
         ):
     
     # set up data paths and configuration
-    pdb_dir = f"{data_dir}/pdb"
+    pdb_dir = f"{data_dir}/pdbs_simulated"
     saxs_dir = f"{data_dir}/saxs_r"
     msa_dir = f"{data_dir}/msa"
     csv_dir = f"{data_dir}/scripts"
