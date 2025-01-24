@@ -9,7 +9,11 @@ from metfish.msa_model.data.feature_pipeline import FeaturePipeline
 
 class MSASAXSDataset(Dataset): 
 
-  def __init__(self, config, path, data_dir=None, pdb_dir=None, pdb_prefix=None, pdb_ext=None, msa_dir=None, saxs_dir=None, saxs_ext=None):
+  def __init__(self, config, path,
+               data_dir=None,
+               pdb_dir=None, pdb_prefix=None, pdb_ext=None,
+               msa_dir=None,
+               saxs_dir=None, saxs_ext=None):
       self.pdb_chains = pd.read_csv(path, index_col='name')#.sort_index()
       self.data_dir = data_dir
       self.msa_dir = msa_dir
