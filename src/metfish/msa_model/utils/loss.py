@@ -1576,6 +1576,7 @@ def saxs_loss(all_atom_pred_pos: torch.Tensor,
               step: float = 0.1,
               dmax: float = None,
               eps: float = 1e-10,
+              use_l1: bool = False,
     **kwargs
 ) -> torch.Tensor:
     """    Computes saxs loss.

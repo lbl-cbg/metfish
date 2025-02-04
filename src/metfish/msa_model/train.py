@@ -104,6 +104,9 @@ parser.add_argument(
 parser.add_argument(
     "--unfreeze_af_weights", default=False, action='store_true',
 )
+parser.add_argument(
+    "--use_l1_loss", default=False, action='store_true',
+)
 
 def main(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/result",
          output_dir="/pscratch/sd/s/smprince/projects/metfish/model_outputs",
@@ -128,6 +131,7 @@ def main(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/result"
          num_sanity_val_steps=0,
          reload_dataloaders_every_n_epochs=1,
          unfreeze_af_weights=False,
+         use_l1_loss=False,
         ):
     
     # set up data paths and configuration
@@ -144,6 +148,9 @@ def main(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/result"
     if deterministic:
         config.data.eval.masked_msa_replace_fraction = 0.0
         config.model.global_config.deterministic = True
+    if use_l1_loss:
+        config.loss.saxs_loss.use_l1 = True
+        config.loss.saxs_loss.weight = 0.8
     data_config = config.data
     data_config.common.use_templates = False
     data_config.common.max_recycling_iters = 0
