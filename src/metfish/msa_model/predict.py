@@ -2,15 +2,14 @@ import torch
 import numpy as np
 import pickle
 
-
-from alphaflow.data.data_modules import collate_fn
-from alphaflow.utils.tensor_utils import tensor_tree_map
-
 from metfish.msa_model.config import model_config
 from metfish.msa_model.data.data_modules import MSASAXSDataset
 from metfish.msa_model.model.msa_saxs import MSASAXSModel
 from openfold.np import protein, residue_constants
 from openfold.np.protein import Protein
+from openfold.data.data_modules import OpenFoldBatchCollator
+
+from metfish.msa_model.utils.tensor_utils import tensor_tree_map
 from metfish.msa_model.model.alphafold_wrapper import AlphaFoldModel
 
 def inference(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/result",
@@ -21,6 +20,8 @@ def inference(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/re
          original_weights=False,
          model_name = 'MSASAXS',
          test_csv_name = 'input_no_training_data.csv',
+         pdb_ext='_atom_only.pdb',
+         saxs_ext='_atom_only.csv',
          tags=None,
         ):
     
@@ -41,7 +42,7 @@ def inference(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/re
     data_config.common.max_recycling_iters = 5
 
     # set up training and test datasets and dataloaders
-    dataset = MSASAXSDataset(data_config, test_csv, msa_dir=msa_dir, pdb_dir=pdb_dir, pdb_ext='_atom_only.pdb', pdb_prefix='', saxs_dir=saxs_dir, saxs_ext='_atom_only.csv')
+    dataset = MSASAXSDataset(data_config, test_csv, msa_dir=msa_dir, pdb_dir=pdb_dir, pdb_ext=pdb_ext, pdb_prefix='', saxs_dir=saxs_dir, saxs_ext=saxs_ext)
     
     # initialize model
     print('Initializing model...')
@@ -65,6 +66,8 @@ def inference(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/re
         for i, item in enumerate(dataset):
 
             # prepare input features
+            collate_fn = OpenFoldBatchCollator()
+
             batch = collate_fn([item])
             batch = tensor_tree_map(lambda x: x.cuda(), batch)  
 
