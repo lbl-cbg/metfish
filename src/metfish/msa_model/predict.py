@@ -2,10 +2,6 @@ import torch
 import numpy as np
 import pickle
 
-
-from alphaflow.data.data_modules import collate_fn
-from alphaflow.utils.tensor_utils import tensor_tree_map
-
 from metfish.msa_model.config import model_config
 from metfish.msa_model.data.data_modules import MSASAXSDataset
 from metfish.msa_model.model.msa_saxs import MSASAXSModel
