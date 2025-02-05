@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 import pickle
+import random
 
 from metfish.msa_model.config import model_config
 from metfish.msa_model.data.data_modules import MSASAXSDataset
@@ -23,6 +24,7 @@ def inference(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/re
          pdb_ext='_atom_only.pdb',
          saxs_ext='_atom_only.csv',
          tags=None,
+         random_seed=None,
         ):
     
     # set up data paths and configuration
@@ -34,9 +36,13 @@ def inference(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/re
     tags = f'_{tags}' if tags is not None else ''
 
     config = model_config('initial_training', train=False, low_prec=True) 
+    if random_seed is None:
+        random_seed = random.randrange(2 ** 32)
+    np.random.seed(random_seed)
+    torch.manual_seed(random_seed + 1)
     if deterministic:
         config.data.eval.masked_msa_replace_fraction = 0.0
-        config.model.global_config.deterministic = True
+        config.data.predict.masked_msa_replace_fraction = 0.0
     data_config = config.data
     data_config.common.use_templates = False
     data_config.common.max_recycling_iters = 5
