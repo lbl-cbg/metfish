@@ -42,7 +42,15 @@ def inference(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/re
     data_config.common.max_recycling_iters = 5
 
     # set up training and test datasets and dataloaders
-    dataset = MSASAXSDataset(data_config, test_csv, msa_dir=msa_dir, pdb_dir=pdb_dir, pdb_ext=pdb_ext, pdb_prefix='', saxs_dir=saxs_dir, saxs_ext=saxs_ext)
+    dataset = MSASAXSDataset(data_config,
+                             test_csv,
+                             mode='predict',
+                             msa_dir=msa_dir,
+                             pdb_dir=pdb_dir,
+                             pdb_ext=pdb_ext,
+                             pdb_prefix='',
+                             saxs_dir=saxs_dir,
+                             saxs_ext=saxs_ext)
     
     # initialize model
     print('Initializing model...')
@@ -67,7 +75,6 @@ def inference(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/re
 
             # prepare input features
             collate_fn = OpenFoldBatchCollator()
-
             batch = collate_fn([item])
             batch = tensor_tree_map(lambda x: x.cuda(), batch)  
 
