@@ -299,6 +299,7 @@ config = mlc.ConfigDict(
                     "between_segment_residues",
                     "deletion_matrix",
                     "no_recycling_iters",
+                    "saxs"
                 ],
                 "use_templates": templates_enabled,
                 "use_template_torsion_angles": embed_template_torsion_angles,
@@ -311,7 +312,6 @@ config = mlc.ConfigDict(
                     "resolution",
                     "use_clamped_fape",
                     "is_distillation",
-                    "saxs",
                 ],
             },
             "predict": {
