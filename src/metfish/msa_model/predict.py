@@ -2,16 +2,18 @@ import torch
 import numpy as np
 import pickle
 import random
-
-from metfish.msa_model.config import model_config
-from metfish.msa_model.data.data_modules import MSASAXSDataset
-from metfish.msa_model.model.msa_saxs import MSASAXSModel
+import os
+ 
 from openfold.np import protein, residue_constants
 from openfold.np.protein import Protein
 from openfold.data.data_modules import OpenFoldBatchCollator
 
-from metfish.msa_model.utils.tensor_utils import tensor_tree_map
+from metfish.msa_model.config import model_config
+from metfish.msa_model.data.data_modules import MSASAXSDataset
+from metfish.msa_model.model.msa_saxs import MSASAXSModel
 from metfish.msa_model.model.alphafold_wrapper import AlphaFoldModel
+from metfish.msa_model.utils.tensor_utils import tensor_tree_map
+
 
 def inference(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/result",
          output_dir="/pscratch/sd/s/smprince/projects/metfish/model_outputs",
@@ -25,6 +27,7 @@ def inference(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/re
          saxs_ext='_atom_only.csv',
          tags=None,
          random_seed=None,
+         overwrite=False
         ):
     
     # set up data paths and configuration
@@ -78,6 +81,9 @@ def inference(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/re
     # run inference
     with torch.no_grad():
         for i, item in enumerate(dataset):
+            if not overwrite and os.path.exists(f'{output_dir}/{dataset.get_name(i)}_{model_name}{tags}_unrelaxed.pdb'):
+                print(f"Skipping {dataset.get_name(i)} as output already exists.")
+                continue
 
             # prepare input features
             collate_fn = OpenFoldBatchCollator()
