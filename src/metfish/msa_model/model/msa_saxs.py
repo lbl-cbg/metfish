@@ -38,7 +38,7 @@ class MSASAXSModel(pl.LightningModule):
         # freeze alphafold model
         if not unfreeze_af_weights:
             for name, param in self.model.named_parameters():
-                if "saxs_msa_attention" not in name:
+                if "saxs_msa_attention" not in name and "saxs_pair_attention" not in name:
                     param.requires_grad = False
 
     def forward(self, batch):
