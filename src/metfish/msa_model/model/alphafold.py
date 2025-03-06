@@ -12,11 +12,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import math
+from functools import partial
+import weakref
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from openfold.model.embedders import (
     InputEmbedder,
@@ -34,7 +34,6 @@ from openfold.model.template import (
     embed_templates_average,
     embed_templates_offload,
 )
-from openfold.model.primitives import LayerNorm, Linear
 import openfold.np.residue_constants as residue_constants
 from openfold.utils.feats import (
     pseudo_beta_fn,
@@ -43,156 +42,17 @@ from openfold.utils.feats import (
     build_template_pair_feat,
     atom14_to_atom37,
 )
+from openfold.utils.loss import (
+    compute_plddt,
+)
 from openfold.utils.tensor_utils import (
     add,
+    dict_multimap,
     tensor_tree_map,
 )
 
 
-# define the model
-class SAXSMSAAttention(nn.Module):
-  def __init__(self,
-               c_q: int,
-               c_k: int,
-               c_v: int,
-               c_hidden: int,
-               no_heads: int,):
-    super(SAXSMSAAttention, self).__init__()
-    
-    self.c_hidden = c_hidden
-    self.no_heads = no_heads
-
-    self.layer_norm_q = LayerNorm(c_q)
-    self.layer_norm_k = LayerNorm(c_k)
-    
-    self.linear_q = Linear(c_q, c_hidden * no_heads)
-    self.linear_k = Linear(c_k, c_hidden * no_heads)
-    self.linear_v = Linear(c_v, c_hidden * no_heads)
-    self.linear_o = Linear(c_hidden * no_heads, c_q)
-    self.sigmoid = nn.Sigmoid()  # TODO - do I want to use this for gating?
-
-  def forward(self,
-              msa: torch.Tensor, 
-              saxs: torch.Tensor, 
-              inplace_safe: bool = False,):
-
-    # b is batch size, m is # msa clusters, r is # residues, s is # saxs bins
-    q_x = msa.view(msa.shape[0], msa.shape[1]*msa.shape[2], msa.shape[3])  # [b, m*r, c]
-    k_x = saxs.unsqueeze(-1)  # [b, s, 1]
-
-    # Normalize inputs
-    q_x = self.layer_norm_q(q_x)  # [b, m*r, c]
-    kv_x = self.layer_norm_k(k_x)  # [b, s, 1]
-
-    q = self.linear_q(q_x)  # [b, m*r, h*c_hidden]
-    k = self.linear_k(kv_x)  # [b, s, h*c_hidden]
-    v = self.linear_v(kv_x)  # [b, s, h*c_hidden]
-
-    # reshape for multiple heads
-    q = q.view(q.shape[:-1] + (self.no_heads, -1)) # [b, m*r, h, c_hidden]
-    k = k.view(k.shape[:-1] + (self.no_heads, -1)) # [b, s, h, c_hidden]
-    v = v.view(v.shape[:-1] + (self.no_heads, -1)) # [b, s, h, c_hidden] 
-
-    # transpose heads
-    q = q.transpose(1, 2)  # [b, h, m*r, c_hidden]
-    k = k.transpose(1, 2)  # [b, h, s, c_hidden]
-    v = v.transpose(1, 2)  # [b, h, s, c_hidden]
-
-    # scale query values
-    q /= math.sqrt(self.c_hidden)
-
-    # permute last two dims of key for multiplication with query
-    k = k.transpose(-2, -1)  # [b, h, c_hidden, s]
-
-    # Compute attention weights
-    a = torch.matmul(q, k)  # [b, h, m*r, s]  # NOTE - large matrix - may need to reduce
-    a = F.softmax(a, dim=-1)  # [b, h, m*r, s]
-
-    # Compute weighted sum of values
-    o = torch.matmul(a, v)  # [b, h, m*r, c_hidden]
-
-    # Flatten final dims
-    o = o.transpose(1, 2)  # [b, m*r, h, c_hidden]
-    o = o.reshape(o.shape[:-2] + (-1,))  # [b, m*r, h*c_hidden]
-
-    # Transform for output
-    o = self.linear_o(o)  # [b, m*r, c]
-    o = o.view(msa.shape[:])  # [b, m, r, c]
-
-    return add(msa, o, inplace=inplace_safe)
-  
-class SAXSPairAttention(nn.Module):
-  def __init__(self,
-            c_q: int,
-            c_k: int,
-            c_v: int,
-            c_hidden: int,
-            no_heads: int,):
-    super(SAXSPairAttention, self).__init__()
-
-    self.c_hidden = c_hidden
-    self.no_heads = no_heads
-
-    self.layer_norm_q = LayerNorm(c_q)
-    self.layer_norm_k = LayerNorm(c_k)
-    
-    self.linear_q = Linear(c_q, c_hidden * no_heads)
-    self.linear_k = Linear(c_k, c_hidden * no_heads)
-    self.linear_v = Linear(c_v, c_hidden * no_heads)
-    self.linear_o = Linear(c_hidden * no_heads, c_q)
-    self.sigmoid = nn.Sigmoid()  # TODO - do I want to use this for gating?
-
-  def forward(self,
-            pair: torch.Tensor,
-            saxs: torch.Tensor,
-            inplace_safe: bool = False,):
-
-    # b is batch size, r is # residues, r is # residues, s is # saxs bins
-    q_x = pair.view(pair.shape[0], pair.shape[1]*pair.shape[2], pair.shape[3])  # [b, r*r, c]
-    k_x = saxs.unsqueeze(-1)  # [b, s, 1]
-
-    # Normalize inputs
-    q_x = self.layer_norm_q(q_x)  # [b, r, r, c]
-    kv_x = self.layer_norm_k(k_x)  # [b, s, 1]
-
-    q = self.linear_q(q_x)  # [b, r*r, h*c_hidden]
-    k = self.linear_k(kv_x)  # [b, s, h*c_hidden]
-    v = self.linear_v(kv_x)  # [b, s, h*c_hidden]
-
-    # reshape for multiple heads
-    q = q.view(q.shape[:-1] + (self.no_heads, -1)) # [b, r*r, h, c_hidden]
-    k = k.view(k.shape[:-1] + (self.no_heads, -1)) # [b, s, h, c_hidden]
-    v = v.view(v.shape[:-1] + (self.no_heads, -1)) # [b, s, h, c_hidden] 
-
-    # transpose heads
-    q = q.transpose(1, 2)  # [b, h, r*r, c_hidden]
-    k = k.transpose(1, 2)  # [b, h, s, c_hidden]
-    v = v.transpose(1, 2)  # [b, h, s, c_hidden]
-
-    # scale query values
-    q /= math.sqrt(self.c_hidden)
-
-    # permute last two dims of key for multiplication with query
-    k = k.transpose(-2, -1)  # [b, h, c_hidden, s]
-
-    # Compute attention weights
-    a = torch.matmul(q, k)  # [b, h, r*r, s]  # NOTE - large matrix - may need to reduce
-    a = F.softmax(a, dim=-1)  # [b, h, r*r, s]
-
-    # Compute weighted sum of values
-    o = torch.matmul(a, v)  # [b, h, r*r, c_hidden]
-
-    # Flatten final dims
-    o = o.transpose(1, 2)  # [b, r*r, h, c_hidden]
-    o = o.reshape(o.shape[:-2] + (-1,))  # [b, r*r, h*c_hidden]
-
-    # Transform for output
-    o = self.linear_o(o)  # [b, r*r, c]
-    o = o.view(pair.shape[:])  # [b, m, r, c]
-
-    return add(pair, o, inplace=inplace_safe)
-
-class AlphaFoldSAXS(nn.Module):
+class AlphaFold(nn.Module):
     """
     Alphafold 2.
 
@@ -205,7 +65,7 @@ class AlphaFoldSAXS(nn.Module):
             config:
                 A dict-like config object (like the one in config.py)
         """
-        super(AlphaFoldSAXS, self).__init__()
+        super(AlphaFold, self).__init__()
 
         self.globals = config.globals
         self.config = config.model
@@ -241,14 +101,6 @@ class AlphaFoldSAXS(nn.Module):
             self.extra_msa_stack = ExtraMSAStack(
                 **self.extra_msa_config["extra_msa_stack"],
             )
-        
-        # saxs attention
-        self.saxs_msa_attention = SAXSMSAAttention(
-            **self.config["saxs_msa_attention"]
-            )
-        self.saxs_pair_attention = SAXSPairAttention(
-            **self.config["saxs_pair_attention"]
-        )
         
         self.evoformer = EvoformerStack(
             **self.config["evoformer_stack"],
@@ -365,16 +217,17 @@ class AlphaFoldSAXS(nn.Module):
         outputs = {}
 
         # This needs to be done manually for DeepSpeed's sake
-        # dtype = next(self.parameters()).dtype
-        # for k in feats:
-        #     if(feats[k].dtype == torch.float32):
-        #         feats[k] = feats[k].to(dtype=dtype)
+        dtype = next(self.parameters()).dtype
+        for k in feats:
+            if(feats[k].dtype == torch.float32):
+                feats[k] = feats[k].to(dtype=dtype)
 
         # Grab some data about the input
         batch_dims = feats["target_feat"].shape[:-2]
         no_batch_dims = len(batch_dims)
         n = feats["target_feat"].shape[-2]
         n_seq = feats["msa_feat"].shape[-3]
+        device = feats["target_feat"].device
         
         # Controls whether the model uses in-place operations throughout
         # The dual condition accounts for activation checkpoints
@@ -523,18 +376,6 @@ class AlphaFoldSAXS(nn.Module):
         outputs["msa_input"] = m.clone().detach()
         outputs["pair_input"] = z.clone().detach()
 
-        # Run SAXS attention module to get modified MSA embedding
-        m = self.saxs_msa_attention(msa=m, 
-                                    saxs=feats['saxs'], 
-                                    inplace_safe=inplace_safe)
-        
-        z = self.saxs_pair_attention(pair=z,
-                                     saxs=feats['saxs'],
-                                     inplace_safe=inplace_safe)
-
-        outputs["msa_post_saxs"] = m.clone().detach()
-        outputs["pair_post_saxs"] = z.clone().detach()
-
         # Run MSA + pair embeddings through the trunk of the network
         # m: [*, S, N, C_m]
         # z: [*, N, N, C_z]
@@ -659,8 +500,7 @@ class AlphaFoldSAXS(nn.Module):
         num_iters = batch["aatype"].shape[-1]
         for cycle_no in range(num_iters): 
             # Select the features for the current recycling cycle
-            def fetch_cur_batch(t):
-              return t[..., cycle_no]
+            fetch_cur_batch = lambda t: t[..., cycle_no]
             feats = tensor_tree_map(fetch_cur_batch, batch)
 
             # Enable grad iff we're training and it's the final recycling layer
