@@ -634,6 +634,7 @@ config = mlc.ConfigDict(
                 "weight": 5.0
             },
             "eps": eps,
+            "saxs_loss_only": False,
         },
         "ema": {"decay": 0.999},
     }
