@@ -15,7 +15,7 @@ def __run_test(pdb_name):
     assert seq_reference[1] == seq_created[1]
 
     # remove the temporary file
-    Path.unlink(f"tests/data/{pdb_name}_temp.fasta")
+    Path(f"tests/data/{pdb_name}_temp.fasta").unlink()
 
 def test_seq():
     pdb_name = "3nir"
@@ -37,3 +37,10 @@ def test_seq_with_multiple_chains():
         assert str(e) == f"More than 1 Chain is in the file tests/data/{pdb_name}.pdb"
     else:
         assert False
+
+if __name__ == "main":
+    test_seq()
+    test_seq_with_residue_gap()
+    test_seq_with_out_of_order_residues()
+    test_seq_with_multiple_chains()
+    print("All tests passed!")
