@@ -36,7 +36,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install torch==1.12.1+cpu --extra-index-url https://download.pytorch.org/whl/cpu  # install separately to use cpu only version for tests
+          pip install torch==2.0.0+cpu --extra-index-url https://download.pytorch.org/whl/cpu  # install separately to use cpu only version for tests
 
       - name: Install package
         run: |
