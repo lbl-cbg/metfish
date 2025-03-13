@@ -20,7 +20,7 @@ def test_compute_saxs_vs_get_pr():
     step = 0.5
     dmax = 256
     
-    pdb_path = Path("/pscratch/sd/s/smprince/projects/metfish_v2/metfish/tests/data/3DB7_A.pdb")
+    pdb_path = Path("tests/data/3DB7_A.pdb")
     structure = PDBParser().get_structure("", pdb_path)
     bins, expected_hist = get_Pr(structure, step=step, dmax=dmax)
     expected_hist = torch.tensor(expected_hist, dtype=torch.float32)
