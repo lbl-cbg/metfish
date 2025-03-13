@@ -37,10 +37,3 @@ def test_seq_with_multiple_chains():
         assert str(e) == f"More than 1 Chain is in the file tests/data/{pdb_name}.pdb"
     else:
         assert False
-
-if __name__ == "main":
-    test_seq()
-    test_seq_with_residue_gap()
-    test_seq_with_out_of_order_residues()
-    test_seq_with_multiple_chains()
-    print("All tests passed!")
