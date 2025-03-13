@@ -45,8 +45,8 @@ extract-seq = "metfish.commands:extract_seq_cli"
 generate-nma-conformers = "metfish.commands:generate_nma_conformers_cli"
 
 [project.optional-dependencies]
-# for training model - see README for torch installation instructions
 training = ["wandb==0.16.6",
+            "torch==1.12.1",
             "pytorch-lightning==2.0.4",
             "openfold @ git+https://github.com/aqlaboratory/openfold.git@103d037",
             "ml-collections==0.1.0",
