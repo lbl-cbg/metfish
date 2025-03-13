@@ -54,8 +54,8 @@ training = ["wandb==0.16.6",
             "modelcif==0.7",
             "biopython==1.79",   # specific versions of main dependencies for reproducibility
             "pandas==1.5.3",
-            "numpy>=1.22.4",
-            "scipy==1.7.1",
+            "numpy==1.22.4",
+            "scipy==1.7.2",
             "periodictable==2.0.2",
             "biopandas==0.5.1",
             ]

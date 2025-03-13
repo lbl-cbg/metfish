@@ -21,7 +21,7 @@ jobs:
         include:
           - { os: ubuntu-latest , opt_req: true }
           - { os: windows-latest, opt_req: false }
-          - { os: macos-latest  , opt_req: false }
+          - { os: macos-13      , opt_req: false }
     env:  # used by codecov-action
       OS: ${{ matrix.os }}
       PYTHON: '3.9'
