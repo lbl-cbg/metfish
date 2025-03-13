@@ -1558,8 +1558,8 @@ def compute_saxs(all_atom_pos: torch.Tensor,
     # Calculate histogram (note no torch hist implementation with weights for cuda)
     if dmax is None:
         dmax = distances.max()
-        dmax = np.ceil(dmax / step) * step
-    bin_edges = torch.arange(0, dmax, step, device=distances.device)
+        dmax = np.ceil(dmax.detach().numpy() / step) * step
+    bin_edges = torch.arange(0, dmax + 0.1, step, device=distances.device)
     hist_torch = differentiable_histogram(distances, dist_weights.to(distances.device), bin_edges)
 
     p = torch.cat((torch.tensor([0], device=distances.device), hist_torch / hist_torch.sum()))
@@ -1584,42 +1584,10 @@ def differentiable_histogram(values, weights, bin_edges):
 
     return hist
 
-def differentiable_kde_histogram(values, weights, bin_centers, bandwidth=0.5):
-    """
-    Compute a differentiable histogram using Gaussian kernel density estimation.
-
-    Args:
-        values: Tensor of shape [N] containing the data points
-        weights: Tensor of shape [N] containing the weights for each point
-        bin_centers: Tensor of shape [num_bins] containing the centers of bins
-        bandwidth: Kernel bandwidth (if None, uses Scott's rule)
-
-    Returns:
-        Tensor of shape [num_bins] containing the weighted histogram
-    """
-    # Reshape for broadcasting
-    x = values.view(-1, 1)      # Shape: [N, 1]
-    w = weights.view(-1, 1)     # Shape: [N, 1]
-    bins = bin_centers.view(1, -1)  # Shape: [1, num_bins]
-
-    # Compute Gaussian kernel: exp(-0.5 * ((x - bins)/bandwidth)^2)
-    kernel_values = torch.exp(-0.5 * ((x - bins) / bandwidth)**2)
-
-    # Weight the kernel values
-    weighted_kernel_values = kernel_values * w
-
-    # Sum over all data points
-    hist = torch.sum(weighted_kernel_values, dim=0)
-
-    # Normalize the histogram
-    hist = hist / (torch.sum(hist) + 1e-10)
-
-    return hist
-
 def saxs_loss(all_atom_pred_pos: torch.Tensor,
               all_atom_mask: torch.Tensor,
-              saxs: torch.Tensor,
-              step: float = 0.1,
+              all_atom_positions: torch.Tensor,
+              step: float = 0.5,
               dmax: float = None,
               eps: float = 1e-10,
               use_l1: bool = False,
@@ -1647,9 +1615,14 @@ def saxs_loss(all_atom_pred_pos: torch.Tensor,
     for (pred_pos, mask) in zip(all_atom_pred_pos, all_atom_mask):  # where pred_pos is a single item in the batch
         p_pred = compute_saxs(all_atom_pos=pred_pos, all_atom_mask=mask, step=step, dmax=dmax)
         pred_saxs.append(p_pred)
-
     pred_saxs = torch.stack(pred_saxs)
-    true_saxs = saxs
+    
+    # recalculate for true positions since input structure could vary in binsize
+    true_saxs = []
+    for (true_pos, mask) in zip(all_atom_positions, all_atom_mask):  # where pred_pos is a single item in the batch
+        p_true = compute_saxs(all_atom_pos=true_pos, all_atom_mask=mask, step=step, dmax=dmax)
+        true_saxs.append(p_true)
+    true_saxs = torch.stack(true_saxs)
 
     if use_l1:
         # calculate the L1 divergence of the SAXS profiles
