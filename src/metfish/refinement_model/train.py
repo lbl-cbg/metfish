@@ -4,6 +4,7 @@ import torch
 import os
 import pytorch_lightning as pl
 
+from pathlib import Path
 from pytorch_lightning.loggers import CSVLogger, WandbLogger
 from torch.utils.data import DataLoader
 
@@ -107,18 +108,17 @@ def main(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/result"
     refinement_model = MSARefinementModelWrapper(config)
 
     # add logging
-    loggers = [CSVLogger(f"{output_dir}/lightning_logs", name="msasaxs")]
+    Path(f"{output_dir}/lightning_logs/{job_name}").mkdir(parents=True, exist_ok=True)
+    loggers = [CSVLogger(f"{output_dir}/lightning_logs/{job_name}", name=job_name)]
     if use_wandb:
         os.environ["WANDB__SERVICE_WAIT"] = "300"
         os.environ["WANDB_MODE"] = "offline"
-        # wandb.init()
-        loggers.append(WandbLogger(name="msasaxs", save_dir=f"{output_dir}/lightning_logs")) 
+        loggers.append(WandbLogger(name=job_name, save_dir=f"{output_dir}/lightning_logs/{job_name}"))
 
     # initialize trainer
     trainer = pl.Trainer(accelerator="gpu", 
                          strategy=strategy,
                          max_epochs=max_epochs, 
-                         limit_train_batches=1.0, 
                          logger=loggers,
                          log_every_n_steps=log_every_n_steps,
                          default_root_dir=output_dir,

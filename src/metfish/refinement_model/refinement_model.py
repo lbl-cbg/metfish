@@ -11,7 +11,7 @@ from metfish.msa_model.utils.loss import compute_saxs
 
 
 class SAXSLoss(torch.nn.Module):
-    """SAXS """
+    """SAXS loss for MSA refinement"""
     def __init__(self, config):
         super(SAXSLoss, self).__init__()
         self.config = config
@@ -41,12 +41,9 @@ class MSARefinementModel(torch.nn.Module):
         self.af_model = AlphaFold(config)
         self.training = training
         
+        # freeze AF parameters to allow gradient flow through AF model
         for param in self.af_model.parameters():
             param.requires_grad = False
-        
-        # initialize parameters
-        self.w = None
-        self.b = None
 
     def initialize_parameters(self, msa):
         self.w = torch.nn.Parameter(torch.ones_like(msa))
@@ -69,7 +66,7 @@ class MSARefinementModel(torch.nn.Module):
 
 # define the lightning module for training
 class MSARefinementModelWrapper(pl.LightningModule):
-    def __init__(self, config, training=True, lr_mul=1.0, lr_add=0.05):
+    def __init__(self, config, training=True, num_iterations=100, lr_mul=1.0, lr_add=0.05):
         super().__init__()
         self.save_hyperparameters()
         self.config = config
@@ -78,13 +75,15 @@ class MSARefinementModelWrapper(pl.LightningModule):
         if training:
             self.loss = SAXSLoss(config.loss)
             self.cached_weights = None
-            self.lr_mul = 1.0
-            self.lr_add = 0.05
+
+            # initial learning rates from Fadini et al.
+            self.lr_mul = lr_mul  
+            self.lr_add = lr_add 
+            self.num_iterations = num_iterations
 
         # activate manual optimization
         self.automatic_optimization = False
-
-        self.num_iterations = 100
+        
         self.last_log_time = time.time()
 
         # TODO - initialize MSA refinement parameters as part of config file
@@ -120,7 +119,7 @@ class MSARefinementModelWrapper(pl.LightningModule):
             loss = self.loss(outputs, batch_no_recycling) 
 
             # backwards pass and update weights
-            self.manual_backward(loss, retain_graph=True)
+            self.manual_backward(loss, retain_graph=True)  # retain graph to use same computation graph multiple times
             opt.step()
 
             # log the loss
@@ -128,7 +127,7 @@ class MSARefinementModelWrapper(pl.LightningModule):
 
         return loss
     
-    def configure_optimizers(self, learning_rate: float = 1e-3, eps: float = 1e-5,):
+    def configure_optimizers(self, eps: float = 1e-5,):
         optimizer = torch.optim.Adam([
             {'params': [self.model.w], 'lr': self.lr_mul},
             {'params': [self.model.b], 'lr': self.lr_add}
