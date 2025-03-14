@@ -136,9 +136,7 @@ def main(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/result"
     # fit the model
     trainer.fit(model=refinement_model, train_dataloaders=train_loader, ckpt_path=ckpt_path)
 
-    print('done')
-
 if __name__ == "__main__":
-    main(data_dir="/global/cfs/cdirs/m3513/metfish/NMR_training/data_for_training",
-         output_dir="/pscratch/sd/s/smprince/projects/metfish/model_outputs/",
-         fast_dev_run=True,)
+    args = parser.parse_args()
+    args_dict = vars(args)
+    main(**args_dict)
