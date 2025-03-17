@@ -74,7 +74,7 @@ def main(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/result"
          ckpt_path=None,
          gpus_per_node=1,
          num_nodes=1,
-         batch_size=2,
+         batch_size=1,
          seed=1,
          use_wandb=True,
          fast_dev_run=False,
@@ -82,7 +82,7 @@ def main(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/result"
          resume_from_ckpt=False,
          precision='bf16-mixed',
          max_epochs=100,
-         log_every_n_steps=25,
+         log_every_n_steps=1,
          job_name='default',
         ):
     

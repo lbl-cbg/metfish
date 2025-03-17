@@ -45,6 +45,8 @@ class MSARefinementModel(torch.nn.Module):
         for param in self.af_model.parameters():
             param.requires_grad = False
 
+        self.initialize_parameters(torch.ones((1)))
+
     def initialize_parameters(self, msa):
         self.w = torch.nn.Parameter(torch.ones_like(msa))
         self.b = torch.nn.Parameter(torch.zeros_like(msa))
@@ -56,8 +58,8 @@ class MSARefinementModel(torch.nn.Module):
 
         # refine msa with linear layer
         # TODO - msa cluster profile here may mean the msa features after embedding... need to modify if so
-        msa_refined = self.w * batch['msa_feat'] + self.b 
-        batch['msa_feat'] = msa_refined
+        msa_feat_refined = self.w * batch['msa_feat'] + self.b
+        batch.update({'msa_feat': msa_feat_refined})
 
         # run through alphafold
         outputs = self.af_model(batch)
@@ -83,11 +85,7 @@ class MSARefinementModelWrapper(pl.LightningModule):
 
         # activate manual optimization
         self.automatic_optimization = False
-        
         self.last_log_time = time.time()
-
-        # TODO - initialize MSA refinement parameters as part of config file
-        self.model.initialize_parameters(torch.zeros(256))
 
     def forward(self, batch):
         return self.model(batch)
@@ -102,7 +100,6 @@ class MSARefinementModelWrapper(pl.LightningModule):
         self.last_log_time = time.time()
 
     def training_step(self, batch):
-        self.model.initialize_parameters(batch['msa_feat'])
         opt = self.optimizers()
 
         for n in range(self.num_iterations):
@@ -111,15 +108,18 @@ class MSARefinementModelWrapper(pl.LightningModule):
             # clear gradients
             opt.zero_grad()
 
+            # create new copy of a batch for each iteration
+            iteration_batch = {k: v for k, v in batch.items()}
+
             # forward pass
-            outputs = self.model(batch)
+            outputs = self.model(iteration_batch)
 
             # calculate loss
             batch_no_recycling = tensor_tree_map(lambda t: t[..., -1], batch)  # remove recycling dimension
             loss = self.loss(outputs, batch_no_recycling) 
 
             # backwards pass and update weights
-            self.manual_backward(loss, retain_graph=True)  # retain graph to use same computation graph multiple times
+            self.manual_backward(loss)
             opt.step()
 
             # log the loss
@@ -127,6 +127,10 @@ class MSARefinementModelWrapper(pl.LightningModule):
 
         return loss
     
+    def on_train_batch_start(self, batch, batch_idx):
+        self.model.initialize_parameters(batch['msa_feat'])
+        self.trainer.strategy.setup_optimizers(self.trainer)  # reset optimizer based on batch msa feature size
+
     def configure_optimizers(self, eps: float = 1e-5,):
         optimizer = torch.optim.Adam([
             {'params': [self.model.w], 'lr': self.lr_mul},
