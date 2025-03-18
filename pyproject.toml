@@ -46,6 +46,7 @@ generate-nma-conformers = "metfish.commands:generate_nma_conformers_cli"
 
 [project.optional-dependencies]
 training = ["wandb==0.16.6",
+            "torch==1.12.1",
             "pytorch-lightning==2.0.4",
             "openfold @ git+https://github.com/aqlaboratory/openfold.git@103d037",
             "ml-collections==0.1.0",
@@ -54,15 +55,26 @@ training = ["wandb==0.16.6",
             "biopython==1.79",   # specific versions of main dependencies for reproducibility
             "pandas==1.5.3",
             "numpy==1.22.4",
-            "scipy==1.7.1",
+            "scipy==1.7.2",
             "periodictable==2.0.2",
             "biopandas==0.5.1",
             ]
+
+# for analysis and data visualization
 viz = ["py3dmol==2.4.2",
        "seaborn==0.13.2",
        "matplotlib==3.8.4",
        "ipywidgets==8.1.5",
        "natsort==8.4.0"]
+
+# for testing
+dev = ["black==23.3.0",
+       "codespell==2.2.4",
+       "coverage==7.2.5",
+       "pre-commit==3.3.1",
+       "pytest==7.3.1",
+       "pytest-cov==4.0.0",
+       "ruff==0.0.265"]
 
 [tool.ruff]
 # Exclude a variety of commonly ignored directories.
