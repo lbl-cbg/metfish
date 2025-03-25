@@ -1,10 +1,5 @@
 
-import time
 import torch
-import pytorch_lightning as pl
-
-from openfold.utils.import_weights import import_jax_weights_
-from openfold.utils.tensor_utils import tensor_tree_map
 from openfold.model.model import AlphaFold
 
 from metfish.msa_model.utils.loss import compute_saxs
@@ -40,24 +35,19 @@ class MSARefinementModel(torch.nn.Module):
         self.config = config
         self.af_model = AlphaFold(config)
         self.training = training
+        if training:
+            self.loss = SAXSLoss(config.loss)
         
         # freeze AF parameters to allow gradient flow through AF model
         for param in self.af_model.parameters():
             param.requires_grad = False
-
-        self.initialize_parameters(torch.ones((1)))
 
     def initialize_parameters(self, msa):
         self.w = torch.nn.Parameter(torch.ones_like(msa))
         self.b = torch.nn.Parameter(torch.zeros_like(msa))
 
     def forward(self, batch):
-        device = batch['aatype'].device
-        self.w = self.w.to(device)
-        self.b = self.b.to(device)
-
         # refine msa with linear layer
-        # TODO - msa cluster profile here may mean the msa features after embedding... need to modify if so
         msa_feat_refined = self.w * batch['msa_feat'] + self.b
         batch.update({'msa_feat': msa_feat_refined})
 
@@ -65,81 +55,3 @@ class MSARefinementModel(torch.nn.Module):
         outputs = self.af_model(batch)
 
         return outputs
-
-# define the lightning module for training
-class MSARefinementModelWrapper(pl.LightningModule):
-    def __init__(self, config, training=True, num_iterations=100, lr_mul=1.0, lr_add=0.05):
-        super().__init__()
-        self.save_hyperparameters()
-        self.config = config
-        self.model = MSARefinementModel(config)
-        self.training = training
-        if training:
-            self.loss = SAXSLoss(config.loss)
-            self.cached_weights = None
-
-            # initial learning rates from Fadini et al.
-            self.lr_mul = lr_mul  
-            self.lr_add = lr_add 
-            self.num_iterations = num_iterations
-
-        # activate manual optimization
-        self.automatic_optimization = False
-        self.last_log_time = time.time()
-
-    def forward(self, batch):
-        return self.model(batch)
-
-    def _log(self, loss, iter=None, train=True):
-        self.log(
-            f"loss_iter{iter}",
-            loss,
-            on_step=False, on_epoch=True, logger=True, sync_dist=True
-        )
-        self.log('dur', time.time() - self.last_log_time, sync_dist=True)
-        self.last_log_time = time.time()
-
-    def training_step(self, batch):
-        opt = self.optimizers()
-
-        for n in range(self.num_iterations):
-            print(f'Running iteration {n} / {self.num_iterations}')
-            
-            # clear gradients
-            opt.zero_grad()
-
-            # create new copy of a batch for each iteration
-            iteration_batch = {k: v for k, v in batch.items()}
-
-            # forward pass
-            outputs = self.model(iteration_batch)
-
-            # calculate loss
-            batch_no_recycling = tensor_tree_map(lambda t: t[..., -1], batch)  # remove recycling dimension
-            loss = self.loss(outputs, batch_no_recycling) 
-
-            # backwards pass and update weights
-            self.manual_backward(loss)
-            opt.step()
-
-            # log the loss
-            self._log(loss.detach(), iter=n)
-
-        return loss
-    
-    def on_train_batch_start(self, batch, batch_idx):
-        self.model.initialize_parameters(batch['msa_feat'])
-        self.trainer.strategy.setup_optimizers(self.trainer)  # reset optimizer based on batch msa feature size
-
-    def configure_optimizers(self, eps: float = 1e-5,):
-        optimizer = torch.optim.Adam([
-            {'params': [self.model.w], 'lr': self.lr_mul},
-            {'params': [self.model.b], 'lr': self.lr_add}
-        ], eps=eps)
-        
-        return optimizer
-        
-    def load_from_jax(self, jax_path):
-        import_jax_weights_(
-                self.model.af_model, jax_path, version='model_3'
-        )
