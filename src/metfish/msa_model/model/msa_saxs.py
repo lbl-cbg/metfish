@@ -3,7 +3,6 @@ import time
 import torch
 import pytorch_lightning as pl
 
-# from openfold.utils.logger import PerformanceLoggingCallback
 from openfold.utils.import_weights import import_jax_weights_
 from openfold.utils.lr_schedulers import AlphaFoldLRScheduler
 from openfold.np import residue_constants
@@ -59,13 +58,6 @@ class MSASAXSModel(pl.LightningModule):
                     indiv_loss,
                     on_step=False, on_epoch=True, logger=True, sync_dist=True
                 )
-
-                # save saxs msa attention weights
-                # for name, params in self.named_parameters():
-                #     if "saxs_msa_attention" in name:
-                #         wandb.log({f"params/{name}": wandb.Histogram(params.cpu().detach().numpy()), "epoch": self.current_epoch})
-                #        self.logger.experiment.add_histogram(f'weights_and_biases/{name}', params, self.current_epoch) # use this for TensorBoard
-
 
         with torch.no_grad():
             metrics = self._compute_validation_metrics(

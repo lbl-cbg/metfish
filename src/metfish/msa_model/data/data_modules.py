@@ -41,7 +41,8 @@ class MSASAXSDataset(Dataset):
       # NOTE - could also manipulate the clustering process here
 
       # saxs data
-      saxs_features = self.data_pipeline._process_saxs_feats(f'{self.saxs_dir}/{item.name}{self.saxs_ext}')
+      saxs_features = self.data_pipeline._process_saxs_feats(f'{self.saxs_dir}/{item.name}{self.saxs_ext}',
+                                                             pad_length=self.feature_pipeline.config.common.feat.saxs[0])
       # TODO - account for cropped sequences by processing saxs after other features are processed or excluding seq < 256 length?
 
       # pdb data - will only load during training
