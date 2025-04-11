@@ -1558,8 +1558,8 @@ def compute_saxs(all_atom_pos: torch.Tensor,
     # Calculate histogram (note no torch hist implementation with weights for cuda)
     if dmax is None:
         dmax = distances.max()
-        dmax = np.ceil(dmax / step) * step
-    bin_edges = torch.arange(0, dmax, step, device=distances.device)
+        dmax = np.ceil(dmax.detach().numpy() / step) * step
+    bin_edges = torch.arange(0, dmax + 0.1, step, device=distances.device)
     hist_torch = differentiable_histogram(distances, dist_weights.to(distances.device), bin_edges)
 
     p = torch.cat((torch.tensor([0], device=distances.device), hist_torch / hist_torch.sum()))
@@ -1618,8 +1618,8 @@ def differentiable_kde_histogram(values, weights, bin_centers, bandwidth=0.5):
 
 def saxs_loss(all_atom_pred_pos: torch.Tensor,
               all_atom_mask: torch.Tensor,
-              saxs: torch.Tensor,
-              step: float = 0.1,
+              all_atom_positions: torch.Tensor,
+              step: float = 0.5,
               dmax: float = None,
               eps: float = 1e-10,
               use_l1: bool = False,
@@ -1647,9 +1647,14 @@ def saxs_loss(all_atom_pred_pos: torch.Tensor,
     for (pred_pos, mask) in zip(all_atom_pred_pos, all_atom_mask):  # where pred_pos is a single item in the batch
         p_pred = compute_saxs(all_atom_pos=pred_pos, all_atom_mask=mask, step=step, dmax=dmax)
         pred_saxs.append(p_pred)
-
     pred_saxs = torch.stack(pred_saxs)
-    true_saxs = saxs
+    
+    # recalculate for true positions since input structure could vary in binsize
+    true_saxs = []
+    for (true_pos, mask) in zip(all_atom_positions, all_atom_mask):  # where pred_pos is a single item in the batch
+        p_true = compute_saxs(all_atom_pos=true_pos, all_atom_mask=mask, step=step, dmax=dmax)
+        true_saxs.append(p_true)
+    true_saxs = torch.stack(true_saxs)
 
     if use_l1:
         # calculate the L1 divergence of the SAXS profiles
