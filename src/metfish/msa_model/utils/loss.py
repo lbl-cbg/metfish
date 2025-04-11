@@ -1584,38 +1584,6 @@ def differentiable_histogram(values, weights, bin_edges):
 
     return hist
 
-def differentiable_kde_histogram(values, weights, bin_centers, bandwidth=0.5):
-    """
-    Compute a differentiable histogram using Gaussian kernel density estimation.
-
-    Args:
-        values: Tensor of shape [N] containing the data points
-        weights: Tensor of shape [N] containing the weights for each point
-        bin_centers: Tensor of shape [num_bins] containing the centers of bins
-        bandwidth: Kernel bandwidth (if None, uses Scott's rule)
-
-    Returns:
-        Tensor of shape [num_bins] containing the weighted histogram
-    """
-    # Reshape for broadcasting
-    x = values.view(-1, 1)      # Shape: [N, 1]
-    w = weights.view(-1, 1)     # Shape: [N, 1]
-    bins = bin_centers.view(1, -1)  # Shape: [1, num_bins]
-
-    # Compute Gaussian kernel: exp(-0.5 * ((x - bins)/bandwidth)^2)
-    kernel_values = torch.exp(-0.5 * ((x - bins) / bandwidth)**2)
-
-    # Weight the kernel values
-    weighted_kernel_values = kernel_values * w
-
-    # Sum over all data points
-    hist = torch.sum(weighted_kernel_values, dim=0)
-
-    # Normalize the histogram
-    hist = hist / (torch.sum(hist) + 1e-10)
-
-    return hist
-
 def saxs_loss(all_atom_pred_pos: torch.Tensor,
               all_atom_mask: torch.Tensor,
               all_atom_positions: torch.Tensor,
