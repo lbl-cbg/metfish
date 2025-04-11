@@ -56,20 +56,21 @@ class SAXSMSAAttention(nn.Module):
                c_k: int,
                c_v: int,
                c_hidden: int,
-               no_heads: int,):
+               no_heads: int,
+               temperature: float = 1.,):
     super(SAXSMSAAttention, self).__init__()
     
     self.c_hidden = c_hidden
     self.no_heads = no_heads
+    self.temperature = temperature
 
     self.layer_norm_q = LayerNorm(c_q)
-    self.layer_norm_k = LayerNorm(c_k)
+    # self.layer_norm_k = LayerNorm(c_k)
     
-    self.linear_q = Linear(c_q, c_hidden * no_heads)
-    self.linear_k = Linear(c_k, c_hidden * no_heads)
-    self.linear_v = Linear(c_v, c_hidden * no_heads)
-    self.linear_o = Linear(c_hidden * no_heads, c_q)
-    self.sigmoid = nn.Sigmoid()  # TODO - do I want to use this for gating?
+    self.linear_q = Linear(c_q, c_hidden * no_heads, init="glorot")
+    self.linear_k = Linear(c_k, c_hidden * no_heads, init="glorot")
+    self.linear_v = Linear(c_v, c_hidden * no_heads, init="glorot")
+    self.linear_o = Linear(c_hidden * no_heads, c_q, init="glorot")
 
   def forward(self,
               msa: torch.Tensor, 
@@ -82,7 +83,8 @@ class SAXSMSAAttention(nn.Module):
 
     # Normalize inputs
     q_x = self.layer_norm_q(q_x)  # [b, m*r, c]
-    kv_x = self.layer_norm_k(k_x)  # [b, s, 1]
+    # kv_x = self.layer_norm_k(k_x)  # [b, s, 1]
+    kv_x = k_x   # [b, s, 1] skip layer normalization here since 1 dimension
 
     q = self.linear_q(q_x)  # [b, m*r, h*c_hidden]
     k = self.linear_k(kv_x)  # [b, s, h*c_hidden]
@@ -106,7 +108,7 @@ class SAXSMSAAttention(nn.Module):
 
     # Compute attention weights
     a = torch.matmul(q, k)  # [b, h, m*r, s]  # NOTE - large matrix - may need to reduce
-    a = F.softmax(a, dim=-1)  # [b, h, m*r, s]
+    a = F.softmax(a / self.temperature, dim=-1)  # [b, h, m*r, s]
 
     # Compute weighted sum of values
     o = torch.matmul(a, v)  # [b, h, m*r, c_hidden]
@@ -127,19 +129,21 @@ class SAXSPairAttention(nn.Module):
             c_k: int,
             c_v: int,
             c_hidden: int,
-            no_heads: int,):
+            no_heads: int,
+            temperature: float = 1.,):
     super(SAXSPairAttention, self).__init__()
 
     self.c_hidden = c_hidden
     self.no_heads = no_heads
+    self.temperature = temperature
 
     self.layer_norm_q = LayerNorm(c_q)
-    self.layer_norm_k = LayerNorm(c_k)
+    # self.layer_norm_k = LayerNorm(c_k)
     
-    self.linear_q = Linear(c_q, c_hidden * no_heads)
-    self.linear_k = Linear(c_k, c_hidden * no_heads)
-    self.linear_v = Linear(c_v, c_hidden * no_heads)
-    self.linear_o = Linear(c_hidden * no_heads, c_q)
+    self.linear_q = Linear(c_q, c_hidden * no_heads, init="glorot")
+    self.linear_k = Linear(c_k, c_hidden * no_heads, init="glorot")
+    self.linear_v = Linear(c_v, c_hidden * no_heads, init="glorot")
+    self.linear_o = Linear(c_hidden * no_heads, c_q, init="glorot")
     self.sigmoid = nn.Sigmoid()  # TODO - do I want to use this for gating?
 
   def forward(self,
@@ -153,7 +157,7 @@ class SAXSPairAttention(nn.Module):
 
     # Normalize inputs
     q_x = self.layer_norm_q(q_x)  # [b, r, r, c]
-    kv_x = self.layer_norm_k(k_x)  # [b, s, 1]
+    kv_x = k_x   # [b, s, 1] skip layer normalization here since 1 dimension
 
     q = self.linear_q(q_x)  # [b, r*r, h*c_hidden]
     k = self.linear_k(kv_x)  # [b, s, h*c_hidden]
@@ -177,7 +181,7 @@ class SAXSPairAttention(nn.Module):
 
     # Compute attention weights
     a = torch.matmul(q, k)  # [b, h, r*r, s]  # NOTE - large matrix - may need to reduce
-    a = F.softmax(a, dim=-1)  # [b, h, r*r, s]
+    a = F.softmax(a / self.temperature, dim=-1)  # [b, h, r*r, s]
 
     # Compute weighted sum of values
     o = torch.matmul(a, v)  # [b, h, r*r, c_hidden]
@@ -520,8 +524,8 @@ class AlphaFoldSAXS(nn.Module):
                     _mask_trans=self.config._mask_trans,
                 )
 
-        outputs["msa_input"] = m.clone().detach()
-        outputs["pair_input"] = z.clone().detach()
+        # outputs["msa_input"] = m.clone().detach()
+        # outputs["pair_input"] = z.clone().detach()
 
         # Run SAXS attention module to get modified MSA embedding
         m = self.saxs_msa_attention(msa=m, 
@@ -532,8 +536,8 @@ class AlphaFoldSAXS(nn.Module):
                                      saxs=feats['saxs'],
                                      inplace_safe=inplace_safe)
 
-        outputs["msa_post_saxs"] = m.clone().detach()
-        outputs["pair_post_saxs"] = z.clone().detach()
+        # outputs["msa_post_saxs"] = m.clone().detach()
+        # outputs["pair_post_saxs"] = z.clone().detach()
 
         # Run MSA + pair embeddings through the trunk of the network
         # m: [*, S, N, C_m]
