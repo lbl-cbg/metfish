@@ -52,7 +52,11 @@ def model_config(
     name, 
     train=False, 
     low_prec=False, 
-    long_sequence_inference=False
+    long_sequence_inference=False,
+    deterministic=False,
+    use_l1_loss=True,
+    use_saxs_loss_only=True,
+    saxs_padding=None
 ):
     c = copy.deepcopy(config)
     # TRAINING PRESETS
@@ -178,6 +182,21 @@ def model_config(
         # If we want exact numerical parity with the original, inf can't be
         # a global constant
         set_inf(c, 1e4)
+    
+    if deterministic:
+        c.data.eval.masked_msa_replace_fraction = 0.0
+        c.model.global_config.deterministic = True
+    
+    if use_l1_loss:
+        c.loss.saxs_loss.use_l1 = True
+        c.loss.saxs_loss.weight = 2  # was 0.8
+    
+    if use_saxs_loss_only:
+        c.loss.saxs_loss_only = True
+    
+    if saxs_padding is not None:
+        c.data.common.feat.saxs = [saxs_padding]
+        c.loss.saxs_loss.dmax = int(saxs_padding * c.loss.saxs_loss.step)
 
     enforce_config_constraints(c)
 
@@ -246,7 +265,7 @@ config = mlc.ConfigDict(
                     "rigidgroups_group_is_ambiguous": [NUM_RES, None],
                     "rigidgroups_gt_exists": [NUM_RES, None],
                     "rigidgroups_gt_frames": [NUM_RES, None, None, None],
-                    "saxs": [512],
+                    "saxs": [256],
                     "seq_length": [],
                     "seq_mask": [NUM_RES],
                     "target_feat": [NUM_RES, None],
@@ -399,6 +418,7 @@ config = mlc.ConfigDict(
                 "c_v": 1,
                 "c_hidden": 32,
                 "no_heads": 8,
+                "temperature": 1e-3,
             },
             "saxs_pair_attention": {
                 "c_q": c_z,
@@ -406,6 +426,7 @@ config = mlc.ConfigDict(
                 "c_v": 1,
                 "c_hidden": 32,
                 "no_heads": 4,
+                "temperature": 1e-3,
             },
             "recycling_embedder": {
                 "c_z": c_z,
@@ -628,10 +649,10 @@ config = mlc.ConfigDict(
             },
             "saxs_loss": {
                 "use_l1": False,
-                "dmax": 256,  # pad to 512 for input data, use 512/step 
+                "dmax": 128,  # pad to 512 for input data, use 512 * step 
                 "step": 0.5,
                 "eps": eps,  # 1e-10,
-                "weight": 5.0
+                "weight": 5.0  # was 5.0
             },
             "eps": eps,
             "saxs_loss_only": False,

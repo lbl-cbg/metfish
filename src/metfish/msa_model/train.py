@@ -4,6 +4,7 @@ import os
 import torch
 import pytorch_lightning as pl
 
+from pathlib import Path
 from pytorch_lightning.profilers import PyTorchProfiler #, SimpleProfiler, AdvancedProfiler
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import CSVLogger, WandbLogger
@@ -96,12 +97,6 @@ parser.add_argument(
     "--log_every_n_steps", type=int, default=25,
 )
 parser.add_argument(
-    "--num_sanity_val_steps", type=int, default=0,
-)
-parser.add_argument(
-    "--reload_dataloaders_every_n_epochs", type=int, default=1,
-)
-parser.add_argument(
     "--unfreeze_af_weights", default=False, action='store_true',
 )
 parser.add_argument(
@@ -110,8 +105,14 @@ parser.add_argument(
 parser.add_argument(
     "--use_saxs_loss_only", default=False, action='store_true',
 )
-
-def main(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/result",
+parser.add_argument(
+    "--job_name", type=str,
+    help='''Name of the job to use for checkpoint dirs and logging.''',
+)
+parser.add_argument(
+    "--saxs_padding_length", type=int, default=256,
+)
+def main(data_dir="/global/cfs/cdirs/m3513/metfish/NMR_training/data_for_training",
          output_dir="/pscratch/sd/s/smprince/projects/metfish/model_outputs",
          ckpt_path=None,
          gpus_per_node=1,
@@ -131,11 +132,11 @@ def main(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/result"
          precision='bf16-mixed',
          max_epochs=100,
          log_every_n_steps=25,
-         num_sanity_val_steps=0,
-         reload_dataloaders_every_n_epochs=1,
          unfreeze_af_weights=False,
          use_l1_loss=False,
          use_saxs_loss_only=False,
+         job_name='default',
+         saxs_padding_length=256 
         ):
     
     # set up data paths and configuration
@@ -143,27 +144,27 @@ def main(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/result"
     saxs_dir = f"{data_dir}/saxs_r"
     msa_dir = f"{data_dir}/msa"
     csv_dir = f"{data_dir}/scripts"
-    training_csv = f'{csv_dir}/input_training.csv'  # NOTE - this was msa_dir for training v_1
+    training_csv = f'{csv_dir}/input_training.csv'
     val_csv = f'{csv_dir}/input_validation.csv'
 
     pl.seed_everything(seed, workers=True) 
     strategy = "ddp" if (gpus_per_node > 1) or num_nodes > 1 else "auto"
-    config = model_config('initial_training', train=True, low_prec=True) 
-    if deterministic:
-        config.data.eval.masked_msa_replace_fraction = 0.0
-        config.model.global_config.deterministic = True
-    if use_l1_loss:
-        config.loss.saxs_loss.use_l1 = True
-        config.loss.saxs_loss.weight = 0.8
-    if use_saxs_loss_only:
-        config.loss.saxs_loss_only = True
+    config = model_config('initial_training', 
+                          train=True, 
+                          low_prec=True, 
+                          deterministic=deterministic,
+                          use_l1_loss=use_l1_loss, 
+                          use_saxs_loss_only=use_saxs_loss_only, 
+                          saxs_padding=saxs_padding_length) 
     data_config = config.data
     data_config.common.use_templates = False
     data_config.common.max_recycling_iters = 0
 
     # set up training and test datasets and dataloaders
-    train_dataset = MSASAXSDataset(data_config, training_csv, msa_dir=msa_dir, saxs_dir=saxs_dir, pdb_dir=pdb_dir, saxs_ext='.pr.csv', pdb_prefix='')
-    val_dataset = MSASAXSDataset(data_config, val_csv, msa_dir=msa_dir, saxs_dir=saxs_dir, pdb_dir=pdb_dir, saxs_ext='.pr.csv',  pdb_prefix='')
+    first_saxs_file = next(Path(saxs_dir).glob('*.csv'))
+    saxs_ext = '.pr.csv' if '.pr.csv' in str(first_saxs_file) else '.csv'
+    train_dataset = MSASAXSDataset(data_config, training_csv, msa_dir=msa_dir, saxs_dir=saxs_dir, pdb_dir=pdb_dir, saxs_ext=saxs_ext, pdb_prefix='')
+    val_dataset = MSASAXSDataset(data_config, val_csv, msa_dir=msa_dir, saxs_dir=saxs_dir, pdb_dir=pdb_dir, saxs_ext=saxs_ext,  pdb_prefix='')
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=8)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=8)
@@ -172,26 +173,27 @@ def main(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/result"
     msasaxsmodel = MSASAXSModel(config, unfreeze_af_weights=unfreeze_af_weights)
 
     # add logging
-    loggers = [CSVLogger(f"{output_dir}/lightning_logs", name="msasaxs")]
+    Path(f"{output_dir}/lightning_logs/{job_name}").mkdir(parents=True, exist_ok=True)
+    loggers = [CSVLogger(f"{output_dir}/lightning_logs/{job_name}", name=job_name)]
     if use_wandb:
         os.environ["WANDB__SERVICE_WAIT"] = "300"
         os.environ["WANDB_MODE"] = "offline"
-        # wandb.init()
-        loggers.append(WandbLogger(name="msasaxs", save_dir=f"{output_dir}/lightning_logs"))
 
-    callbacks = [ModelCheckpoint(dirpath=f"{output_dir}/checkpoints", 
-                                save_top_k=-1,
-                                every_n_epochs=checkpoint_every_n_epochs,),
-                ModelCheckpoint(dirpath=f"{output_dir}/checkpoints",
-                                save_top_k=-1,
-                                every_n_train_steps=checkpoint_every_n_steps,),]
+        wandb_logger = WandbLogger(name=job_name, save_dir=f"{output_dir}/lightning_logs/{job_name}")
+        wandb_logger.watch(msasaxsmodel, log='all', log_freq=1000)
+        loggers.append(wandb_logger)
+
+    Path(f"{output_dir}/checkpoints/{job_name}").mkdir(parents=True, exist_ok=True)
+    callbacks = [ModelCheckpoint(dirpath=f"{output_dir}/checkpoints/{job_name}", 
+                                 save_top_k=-1,
+                                 every_n_epochs=checkpoint_every_n_epochs,),
+                 ModelCheckpoint(dirpath=f"{output_dir}/checkpoints/{job_name}",
+                                 save_top_k=-1,
+                                 every_n_train_steps=checkpoint_every_n_steps,),]
 
     # add profiler
     if profile:
-        profiler = PyTorchProfiler(dirpath=f"{output_dir}/lightning_logs/pytorch_profiler", filename='profile_trace.txt')
-        # profiler = PyTorchProfiler(dirpath=f"{output_dir}/lightning_logs/pytorch_profiler", filename='profile_trace.txt', emit_nvtx=True)
-        # profiler = AdvancedProfiler(dirpath=f"{output_dir}/lightning_logs/advanced_profiler", filename='profile_trace')
-        # profiler = SimpleProfiler(dirpath=f"{output_dir}/lightning_logs/simple_profiler", filename='profile_trace')
+        profiler = PyTorchProfiler(dirpath=f"{output_dir}/lightning_logs/{job_name}/pytorch_profiler", filename='profile_trace.txt')
     else:
         profiler = None
 
@@ -212,7 +214,7 @@ def main(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/result"
                             fast_dev_run=fast_dev_run, 
                             precision=precision,
                             profiler=profiler,
-                            # max_steps=20
+                            #max_steps=5
                             )
 
     # load existing weights
@@ -238,6 +240,9 @@ def main(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/result"
         trainer.validate(model=msasaxsmodel, dataloaders=val_loader, ckpt_path=ckpt_path)
     else:
         trainer.fit(model=msasaxsmodel, train_dataloaders=train_loader, val_dataloaders=val_loader, ckpt_path=ckpt_path)
+    
+    if use_wandb:
+        wandb_logger.experiment.unwatch(msasaxsmodel)
 
 if __name__ == "__main__":
     args = parser.parse_args()
