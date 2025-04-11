@@ -65,8 +65,8 @@ parser.add_argument(
     "--overwrite", default=False, action='store_true',
     help="Whether to skip optimization if model checkpoints already exist"
 )
-def main(data_dir,
-         output_dir,
+def main(data_dir="/global/cfs/cdirs/m3513/metfish/apo_holo_data",
+         output_dir="/pscratch/sd/s/smprince/projects/metfish/model_outputs",
          ckpt_path=None,
          batch_size=1,
          seed=1,

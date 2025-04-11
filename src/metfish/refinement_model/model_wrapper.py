@@ -20,12 +20,11 @@ def train(fabric, model, optimizer1, optimizer2, batch,
     best_loss = float('inf')
     intermediate_pdb_path = Path(f'{intermediate_output_path}/{Path(ckpt_path).stem}') if intermediate_output_path is not None else None
     ckpt_path_phase_1 = ckpt_path.replace('.ckpt', '_phase1.ckpt')  
-    ckpt_path_phase_2 = ckpt_path.replace('.ckpt', '_phase2.ckpt')  
+    ckpt_path_phase_2 = ckpt_path.replace('.ckpt', '_phase2.ckpt') 
 
     # phase 1 training
     for r in range(num_runs_phase_1):
         model.initialize_parameters(batch['msa_feat'])
-
         for i in tqdm(range(num_iterations_phase1)):
             
             # clear gradientsj
@@ -45,13 +44,13 @@ def train(fabric, model, optimizer1, optimizer2, batch,
             fabric.backward(loss)
             optimizer1.step()
 
-            # log the loss
-            fabric.log("loss", loss)
-
             if intermediate_pdb_path is not None:
+                fabric.log(f"loss/{intermediate_pdb_path.stem}_phase1", loss)
                 pdb_path_output = f'{intermediate_pdb_path}_phase1_run_{r}_iter_{i}.pdb'
                 save_intermediate_optimization_steps({**outputs, **batch_no_recycling}, pdb_path_output)
-        
+            else:
+                fabric.log("loss/phase1", loss)
+
         # save checkpoint if best so far
         if loss < best_loss and ckpt_path_phase_1 is not None:
             best_loss = loss
@@ -81,9 +80,6 @@ def train(fabric, model, optimizer1, optimizer2, batch,
         fabric.backward(loss)
         optimizer2.step()
 
-        # log the loss
-        fabric.log("loss", loss)
-
         # early stopping check
         if early_stopping:
             min_delta = 0.1
@@ -98,8 +94,11 @@ def train(fabric, model, optimizer1, optimizer2, batch,
         
         # save intermediate output check
         if intermediate_pdb_path is not None:
+            fabric.log(f"loss/{intermediate_pdb_path.stem}_phase2", loss)
             pdb_path_output = f'{intermediate_pdb_path}_phase2_iter_{i}.pdb'
             save_intermediate_optimization_steps({**outputs, **batch_no_recycling}, pdb_path_output)
+        else:
+            fabric.log("loss/phase2", loss)
     
     state = {"model": model, "optimizer1": optimizer1, "optimizer2": optimizer2, "iter": i}
     fabric.save(ckpt_path_phase_2, state)
