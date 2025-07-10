@@ -136,7 +136,7 @@ def main(data_dir="/global/cfs/cdirs/m3513/metfish/NMR_training/data_for_trainin
          use_l1_loss=False,
          use_saxs_loss_only=False,
          job_name='default',
-         saxs_padding_length=256,
+         saxs_padding_length=256, 
         ):
     
     # set up data paths and configuration
@@ -155,7 +155,7 @@ def main(data_dir="/global/cfs/cdirs/m3513/metfish/NMR_training/data_for_trainin
                           deterministic=deterministic,
                           use_l1_loss=use_l1_loss, 
                           use_saxs_loss_only=use_saxs_loss_only, 
-                          saxs_padding=saxs_padding_length) 
+                          saxs_padding=saxs_padding_length)
     data_config = config.data
     data_config.common.use_templates = False
     data_config.common.max_recycling_iters = 0
