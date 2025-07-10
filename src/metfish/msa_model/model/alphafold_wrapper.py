@@ -13,7 +13,7 @@ from openfold.utils.superimposition import superimpose
 from openfold.utils.exponential_moving_average import ExponentialMovingAverage
 from openfold.utils.tensor_utils import tensor_tree_map
 
-from metfish.msa_model.model.alphafold import AlphaFold
+from openfold.model.model import AlphaFold
 
 # define the lightning module for training
 class AlphaFoldModel(pl.LightningModule):
