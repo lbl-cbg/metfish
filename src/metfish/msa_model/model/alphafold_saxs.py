@@ -524,9 +524,6 @@ class AlphaFoldSAXS(nn.Module):
                     _mask_trans=self.config._mask_trans,
                 )
 
-        # outputs["msa_input"] = m.clone().detach()
-        # outputs["pair_input"] = z.clone().detach()
-
         # Run SAXS attention module to get modified MSA embedding
         m = self.saxs_msa_attention(msa=m, 
                                     saxs=feats['saxs'], 
@@ -535,9 +532,6 @@ class AlphaFoldSAXS(nn.Module):
         z = self.saxs_pair_attention(pair=z,
                                      saxs=feats['saxs'],
                                      inplace_safe=inplace_safe)
-
-        # outputs["msa_post_saxs"] = m.clone().detach()
-        # outputs["pair_post_saxs"] = z.clone().detach()
 
         # Run MSA + pair embeddings through the trunk of the network
         # m: [*, S, N, C_m]

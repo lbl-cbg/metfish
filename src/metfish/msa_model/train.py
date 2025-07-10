@@ -79,7 +79,7 @@ parser.add_argument(
     help="""Number of epochs after which to checkpoint the model"""
 )
 parser.add_argument(
-    "--checkpoint_every_n_steps", type=int, default=500,
+    "--checkpoint_every_n_steps", type=int, default=1000,
     help="""Number of training steps after which to checkpoint the model"""
 )
 parser.add_argument(
@@ -127,7 +127,7 @@ def main(data_dir="/global/cfs/cdirs/m3513/metfish/NMR_training/data_for_trainin
          deterministic=False,
          profile=False,
          checkpoint_every_n_epochs=1,
-         checkpoint_every_n_steps=500,
+         checkpoint_every_n_steps=1000,
          resume_from_ckpt=False,
          precision='bf16-mixed',
          max_epochs=100,
@@ -136,7 +136,7 @@ def main(data_dir="/global/cfs/cdirs/m3513/metfish/NMR_training/data_for_trainin
          use_l1_loss=False,
          use_saxs_loss_only=False,
          job_name='default',
-         saxs_padding_length=256 
+         saxs_padding_length=256,
         ):
     
     # set up data paths and configuration
@@ -179,8 +179,8 @@ def main(data_dir="/global/cfs/cdirs/m3513/metfish/NMR_training/data_for_trainin
         os.environ["WANDB__SERVICE_WAIT"] = "300"
         os.environ["WANDB_MODE"] = "offline"
 
-        wandb_logger = WandbLogger(name=job_name, save_dir=f"{output_dir}/lightning_logs/{job_name}")
-        wandb_logger.watch(msasaxsmodel, log='all', log_freq=1000)
+        wandb_logger = WandbLogger(name=job_name, save_dir=f"{output_dir}/lightning_logs/{job_name}", project='metfish')
+        wandb_logger.watch(msasaxsmodel, log='all', log_freq=5000)
         loggers.append(wandb_logger)
 
     Path(f"{output_dir}/checkpoints/{job_name}").mkdir(parents=True, exist_ok=True)

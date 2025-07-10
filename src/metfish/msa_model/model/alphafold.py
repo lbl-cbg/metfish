@@ -373,9 +373,6 @@ class AlphaFold(nn.Module):
                     _mask_trans=self.config._mask_trans,
                 )
 
-        outputs["msa_input"] = m.clone().detach()
-        outputs["pair_input"] = z.clone().detach()
-
         # Run MSA + pair embeddings through the trunk of the network
         # m: [*, S, N, C_m]
         # z: [*, N, N, C_z]
