@@ -23,7 +23,7 @@ def inference(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/re
          jax_param_path="/pscratch/sd/s/smprince/projects/alphaflow/params_model_1.npz",
          deterministic=False,
          original_weights=False,
-         model_name = 'AFSAXS',
+         model_name = 'MSASAXS',
          test_csv_name = 'input_no_training_data.csv',
          pdb_ext='_atom_only.pdb',
          saxs_ext='_atom_only.csv',
@@ -127,43 +127,43 @@ def output_to_protein(output):
     
     return pred
 
-if __name__ == "__main__":
-    
-    parser = argparse.ArgumentParser(description="Run MSA-SAXS model inference")
-    parser.add_argument("--data_dir", type=str, 
-                       default="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/result",
-                       help="Directory containing input data")
-    parser.add_argument("--output_dir", type=str,
-                       default="/pscratch/sd/s/smprince/projects/metfish/model_outputs",
-                       help="Directory to save outputs")
-    parser.add_argument("--ckpt_path", type=str, default=None,
-                       help="Path to model checkpoint")
-    parser.add_argument("--jax_param_path", type=str,
-                       default="/pscratch/sd/s/smprince/projects/alphaflow/params_model_1.npz",
-                       help="Path to JAX parameters file")
-    parser.add_argument("--deterministic", action="store_true",
-                       help="Use deterministic inference")
-    parser.add_argument("--original_weights", action="store_true",
-                       help="Use original AlphaFold weights")
-    parser.add_argument("--model_name", type=str, default="MSASAXS",
-                       choices=["MSASAXS", "AFSAXS", "AlphaFold"],
-                       help="Model type to use")
-    parser.add_argument("--test_csv_name", type=str, default="input_no_training_data.csv",
-                       help="Name of test CSV file")
-    parser.add_argument("--pdb_ext", type=str, default="_atom_only.pdb",
-                       help="PDB file extension")
-    parser.add_argument("--saxs_ext", type=str, default="_atom_only.csv",
-                       help="SAXS file extension")
-    parser.add_argument("--tags", type=str, default=None,
-                       help="Additional tags for output files")
-    parser.add_argument("--random_seed", type=int, default=None,
-                       help="Random seed for reproducibility")
-    parser.add_argument("--overwrite", action="store_true",
-                       help="Overwrite existing output files")
-    
-    args = parser.parse_args()
-    
-    # Convert output_dir string to Path object
-    args.output_dir = Path(args.output_dir)
-    
-    inference(**vars(args))
+    if __name__ == "__main__":
+        
+        parser = argparse.ArgumentParser(description="Run MSA-SAXS model inference")
+        parser.add_argument("--data_dir", type=str, 
+                           default="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/result",
+                           help="Directory containing input data")
+        parser.add_argument("--output_dir", type=str,
+                           default="/pscratch/sd/s/smprince/projects/metfish/model_outputs",
+                           help="Directory to save outputs")
+        parser.add_argument("--ckpt_path", type=str, default=None,
+                           help="Path to model checkpoint")
+        parser.add_argument("--jax_param_path", type=str,
+                           default="/pscratch/sd/s/smprince/projects/alphaflow/params_model_1.npz",
+                           help="Path to JAX parameters file")
+        parser.add_argument("--deterministic", action="store_true",
+                           help="Use deterministic inference")
+        parser.add_argument("--original_weights", action="store_true",
+                           help="Use original AlphaFold weights")
+        parser.add_argument("--model_name", type=str, default="MSASAXS",
+                           choices=["MSASAXS", "AFSAXS", "AlphaFold"],
+                           help="Model type to use")
+        parser.add_argument("--test_csv_name", type=str, default="input_no_training_data.csv",
+                           help="Name of test CSV file")
+        parser.add_argument("--pdb_ext", type=str, default="_atom_only.pdb",
+                           help="PDB file extension")
+        parser.add_argument("--saxs_ext", type=str, default="_atom_only.csv",
+                           help="SAXS file extension")
+        parser.add_argument("--tags", type=str, default=None,
+                           help="Additional tags for output files")
+        parser.add_argument("--random_seed", type=int, default=None,
+                           help="Random seed for reproducibility")
+        parser.add_argument("--overwrite", action="store_true",
+                           help="Overwrite existing output files")
+        
+        args = parser.parse_args()
+        
+        # Convert output_dir string to Path object
+        args.output_dir = Path(args.output_dir)
+        
+        inference(**vars(args))
