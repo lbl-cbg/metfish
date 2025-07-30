@@ -110,7 +110,7 @@ parser.add_argument(
     help='''Name of the job to use for checkpoint dirs and logging.''',
 )
 parser.add_argument(
-    "--saxs_padding_length", type=int, default=256,
+    "--saxs_padding_length", type=int, default=128,
 )
 def main(data_dir="/global/cfs/cdirs/m3513/metfish/NMR_training/data_for_training",
          output_dir="/pscratch/sd/s/smprince/projects/metfish/model_outputs",
@@ -136,11 +136,14 @@ def main(data_dir="/global/cfs/cdirs/m3513/metfish/NMR_training/data_for_trainin
          use_l1_loss=False,
          use_saxs_loss_only=False,
          job_name='default',
-         saxs_padding_length=256, 
+         saxs_padding_length=128, 
         ):
     
     # set up data paths and configuration
-    pdb_dir = f"{data_dir}/pdb"
+    if 'simulated' in data_dir:
+        pdb_dir = f"{data_dir}/pdbs_simulated"
+    else:   
+        pdb_dir = f"{data_dir}/pdb"
     saxs_dir = f"{data_dir}/saxs_r"
     msa_dir = f"{data_dir}/msa"
     csv_dir = f"{data_dir}/scripts"
@@ -162,9 +165,15 @@ def main(data_dir="/global/cfs/cdirs/m3513/metfish/NMR_training/data_for_trainin
 
     # set up training and test datasets and dataloaders
     first_saxs_file = next(Path(saxs_dir).glob('*.csv'))
-    saxs_ext = '.pr.csv' if '.pr.csv' in str(first_saxs_file) else '.csv'
-    train_dataset = MSASAXSDataset(data_config, training_csv, msa_dir=msa_dir, saxs_dir=saxs_dir, pdb_dir=pdb_dir, saxs_ext=saxs_ext, pdb_prefix='')
-    val_dataset = MSASAXSDataset(data_config, val_csv, msa_dir=msa_dir, saxs_dir=saxs_dir, pdb_dir=pdb_dir, saxs_ext=saxs_ext,  pdb_prefix='')
+    if '.pdb.pr.csv' in str(first_saxs_file):
+        saxs_ext = '.pdb.pr.csv'
+    elif '.pr.csv' in str(first_saxs_file):
+        saxs_ext = '.pr.csv'
+    else: 
+        saxs_ext = '.csv'
+    pdb_prefix = 'fixed_' if 'fixed' in data_dir else ''
+    train_dataset = MSASAXSDataset(data_config, training_csv, msa_dir=msa_dir, saxs_dir=saxs_dir, pdb_dir=pdb_dir, saxs_ext=saxs_ext, pdb_prefix=pdb_prefix)
+    val_dataset = MSASAXSDataset(data_config, val_csv, msa_dir=msa_dir, saxs_dir=saxs_dir, pdb_dir=pdb_dir, saxs_ext=saxs_ext,  pdb_prefix=pdb_prefix)
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=8)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=8)
