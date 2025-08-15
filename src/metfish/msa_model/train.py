@@ -223,7 +223,6 @@ def main(data_dir="/global/cfs/cdirs/m3513/metfish/NMR_training/data_for_trainin
                             fast_dev_run=fast_dev_run, 
                             precision=precision,
                             profiler=profiler,
-                            #max_steps=5
                             )
 
     # load existing weights
