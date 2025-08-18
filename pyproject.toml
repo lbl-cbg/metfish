@@ -47,6 +47,7 @@ generate-nma-conformers = "metfish.commands:generate_nma_conformers_cli"
 [project.optional-dependencies]
 training = ["wandb==0.16.6",
             "torch==1.12.1",
+            "lightning==2.1.0",
             "pytorch-lightning==2.0.4",
             "openfold @ git+https://github.com/aqlaboratory/openfold.git@103d037",
             "ml-collections==0.1.0",

@@ -32,6 +32,7 @@ def inference(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/re
     
     # set up data paths and configuration
     print('Setting up data paths and configuration...')
+    output_dir.mkdir(parents=True, exist_ok=True)
     saxs_dir = f"{data_dir}/saxs_r"
     msa_dir = f"{data_dir}/msa"
     pdb_dir = f"{data_dir}/pdbs"
