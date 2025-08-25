@@ -56,7 +56,7 @@ def model_config(
 ):
     c = copy.deepcopy(config)
     # TRAINING PRESETS
-    if name == "initial_training":
+    if name == "generating":
         # AF2 Suppl. Table 4, "initial training" setting
         pass
     elif name == "finetuning":

@@ -1,10 +1,55 @@
 
+import torch
 from tqdm import tqdm
 from pathlib import Path
 from openfold.utils.tensor_utils import tensor_tree_map
 from openfold.np import protein
 
 from metfish.utils import output_to_protein
+
+
+def generate_ensemble(fabric, model, batch, 
+                     num_ensemble=10,
+                     output_dir=None,
+                     seq_name=None):
+    """
+    Generate ensemble of structures using random MSA sampling
+    """
+    model.eval()
+    
+    with torch.no_grad():
+        for ensemble_idx in tqdm(range(num_ensemble), desc=f"Generating ensemble for {seq_name}"):
+            # create new copy of batch for each ensemble member
+            iteration_batch = {k: v.clone() for k, v in batch.items()}
+            
+            # initialize random parameters for this ensemble member
+            model.initialize_parameters(iteration_batch['msa_feat'])
+            
+            # forward pass with random sampling
+            outputs = model(iteration_batch)
+            
+            # prepare output for protein generation
+            batch_no_recycling = tensor_tree_map(lambda t: t[0, ..., -1], batch)
+            out_to_prot_keys = ['final_atom_positions', 'plddt', 'atom37_atom_exists', 'aatype', 'residue_index', 'chain_index']
+            output_info = {k: v.clone().detach() for k, v in outputs.items() if k in out_to_prot_keys}
+            
+            # add batch info if needed
+            for k in out_to_prot_keys:
+                if k in batch_no_recycling and k not in output_info:
+                    output_info[k] = batch_no_recycling[k].clone().detach()
+            
+            unrelaxed_protein = output_to_protein(output_info)
+            
+            # save ensemble member
+            if output_dir:
+                pdb_path = f'{output_dir}/{seq_name}_ensemble_{ensemble_idx:03d}.pdb'
+                with open(pdb_path, 'w') as f:
+                    f.write(protein.to_pdb(unrelaxed_protein))
+            
+            # log progress
+            fabric.log(f"ensemble_generation/{seq_name}", ensemble_idx + 1)
+    
+    print(f"Generated {num_ensemble} ensemble structures for {seq_name}")
 
 
 def train(fabric, model, optimizer1, optimizer2, batch, 
