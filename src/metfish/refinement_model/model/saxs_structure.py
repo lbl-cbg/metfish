@@ -29,7 +29,7 @@ from openfold.model.embedders import (
 from openfold.model.evoformer import EvoformerStack, ExtraMSAStack
 from openfold.model.heads import AuxiliaryHeads
 from openfold.model.structure_module import (
-    StructureModule as OpenFoldStructureModule,
+    StructureModule,
     StructureModuleTransition,
     BackboneUpdate,
     AngleResnet,
@@ -66,315 +66,6 @@ from openfold.utils.tensor_utils import (
 )
 
 
-class StructureModule(nn.Module):
-    def __init__(
-        self,
-        c_s,
-        c_z,
-        c_ipa,
-        c_resnet,
-        no_heads_ipa,
-        no_qk_points,
-        no_v_points,
-        dropout_rate,
-        no_blocks,
-        no_transition_layers,
-        no_resnet_blocks,
-        no_angles,
-        trans_scale_factor,
-        epsilon,
-        inf,
-        **kwargs,
-    ):
-        """
-        Args:
-            c_s:
-                Single representation channel dimension
-            c_z:
-                Pair representation channel dimension
-            c_ipa:
-                IPA hidden channel dimension
-            c_resnet:
-                Angle resnet (Alg. 23 lines 11-14) hidden channel dimension
-            no_heads_ipa:
-                Number of IPA heads
-            no_qk_points:
-                Number of query/key points to generate during IPA
-            no_v_points:
-                Number of value points to generate during IPA
-            dropout_rate:
-                Dropout rate used throughout the layer
-            no_blocks:
-                Number of structure module blocks
-            no_transition_layers:
-                Number of layers in the single representation transition
-                (Alg. 23 lines 8-9)
-            no_resnet_blocks:
-                Number of blocks in the angle resnet
-            no_angles:
-                Number of angles to generate in the angle resnet
-            trans_scale_factor:
-                Scale of single representation transition hidden dimension
-            epsilon:
-                Small number used in angle resnet normalization
-            inf:
-                Large number used for attention masking
-        """
-        super(StructureModule, self).__init__()
-
-        self.c_s = c_s
-        self.c_z = c_z
-        self.c_ipa = c_ipa
-        self.c_resnet = c_resnet
-        self.no_heads_ipa = no_heads_ipa
-        self.no_qk_points = no_qk_points
-        self.no_v_points = no_v_points
-        self.dropout_rate = dropout_rate
-        self.no_blocks = no_blocks
-        self.no_transition_layers = no_transition_layers
-        self.no_resnet_blocks = no_resnet_blocks
-        self.no_angles = no_angles
-        self.trans_scale_factor = trans_scale_factor
-        self.epsilon = epsilon
-        self.inf = inf
-
-        # Buffers to be lazily initialized later
-        # self.default_frames
-        # self.group_idx
-        # self.atom_mask
-        # self.lit_positions
-
-        self.layer_norm_s = LayerNorm(self.c_s)
-        self.layer_norm_z = LayerNorm(self.c_z)
-
-        self.linear_in = Linear(self.c_s, self.c_s)
-
-        self.ipa = InvariantPointAttention(
-            self.c_s,
-            self.c_z,
-            self.c_ipa,
-            self.no_heads_ipa,
-            self.no_qk_points,
-            self.no_v_points,
-            inf=self.inf,
-            eps=self.epsilon,
-        )
-
-        self.ipa_dropout = nn.Dropout(self.dropout_rate)
-        self.layer_norm_ipa = LayerNorm(self.c_s)
-
-        self.transition = StructureModuleTransition(
-            self.c_s,
-            self.no_transition_layers,
-            self.dropout_rate,
-        )
-
-        self.bb_update = BackboneUpdate(self.c_s)
-
-        self.angle_resnet = AngleResnet(
-            self.c_s,
-            self.c_resnet,
-            self.no_resnet_blocks,
-            self.no_angles,
-            self.epsilon,
-        )
-
-    def forward(
-        self,
-        evoformer_output_dict,
-        aatype,
-        mask=None,
-        inplace_safe=False,
-        _offload_inference=False,
-    ):
-        """
-        Args:
-            evoformer_output_dict:
-                Dictionary containing:
-                    "single":
-                        [*, N_res, C_s] single representation
-                    "pair":
-                        [*, N_res, N_res, C_z] pair representation
-            aatype:
-                [*, N_res] amino acid indices
-            mask:
-                Optional [*, N_res] sequence mask
-        Returns:
-            A dictionary of outputs
-        """
-        s = evoformer_output_dict["single"]
-        
-        if mask is None:
-            # [*, N]
-            mask = s.new_ones(s.shape[:-1])
-
-        # [*, N, C_s]
-        s = self.layer_norm_s(s)
-
-        # [*, N, N, C_z]
-        z = self.layer_norm_z(evoformer_output_dict["pair"])
-
-        z_reference_list = None
-        if(_offload_inference):
-            refcount = sys.getrefcount(evoformer_output_dict["pair"])
-            print(f"[DEBUG] sys.getrefcount(evoformer_output_dict['pair']): {refcount}")
-            assert(refcount == 2), f"Expected refcount 2 for evoformer_output_dict['pair'], got {refcount}. This may indicate an unexpected reference or memory leak."
-            evoformer_output_dict["pair"] = evoformer_output_dict["pair"].cpu()
-            z_reference_list = [z]
-            z = None
-
-        # [*, N, C_s]
-        s_initial = s
-        s = self.linear_in(s)
-
-        # [*, N]
-        rigids = Rigid.identity(
-            s.shape[:-1], 
-            s.dtype, 
-            s.device, 
-            self.training,
-            fmt="quat",
-        )
-        outputs = []
-        for i in range(self.no_blocks):
-            # [*, N, C_s]
-            s = s + self.ipa(
-                s, 
-                z, 
-                rigids, 
-                mask, 
-                inplace_safe=inplace_safe,
-                _offload_inference=_offload_inference, 
-                _z_reference_list=z_reference_list
-            )
-            s = self.ipa_dropout(s)
-            s = self.layer_norm_ipa(s)
-            s = self.transition(s)
-           
-            # [*, N]
-            rigids = rigids.compose_q_update_vec(self.bb_update(s))
-
-            # To hew as closely as possible to AlphaFold, we convert our
-            # quaternion-based transformations to rotation-matrix ones
-            # here
-            backb_to_global = Rigid(
-                Rotation(
-                    rot_mats=rigids.get_rots().get_rot_mats(), 
-                    quats=None
-                ),
-                rigids.get_trans(),
-            )
-
-            backb_to_global = backb_to_global.scale_translation(
-                self.trans_scale_factor
-            )
-
-            # [*, N, 7, 2]
-            unnormalized_angles, angles = self.angle_resnet(s, s_initial)
-
-            all_frames_to_global = self.torsion_angles_to_frames(
-                backb_to_global,
-                angles,
-                aatype,
-            )
-
-            pred_xyz = self.frames_and_literature_positions_to_atom14_pos(
-                all_frames_to_global,
-                aatype,
-            )
-
-            scaled_rigids = rigids.scale_translation(self.trans_scale_factor)
-            
-            preds = {
-                "frames": scaled_rigids.to_tensor_7(),
-                "sidechain_frames": all_frames_to_global.to_tensor_4x4(),
-                "unnormalized_angles": unnormalized_angles,
-                "angles": angles,
-                "positions": pred_xyz,
-                "states": s,
-            }
-
-            outputs.append(preds)
-
-            rigids = rigids.stop_rot_gradient()
-
-        del z, z_reference_list
-        
-        if(_offload_inference):
-            evoformer_output_dict["pair"] = (
-                evoformer_output_dict["pair"].to(s.device)
-            )
-
-        outputs = dict_multimap(torch.stack, outputs)
-        outputs["single"] = s
-
-        return outputs
-
-    def _init_residue_constants(self, float_dtype, device):
-        if not hasattr(self, "default_frames"):
-            self.register_buffer(
-                "default_frames",
-                torch.tensor(
-                    restype_rigid_group_default_frame,
-                    dtype=float_dtype,
-                    device=device,
-                    requires_grad=False,
-                ),
-                persistent=False,
-            )
-        if not hasattr(self, "group_idx"):
-            self.register_buffer(
-                "group_idx",
-                torch.tensor(
-                    restype_atom14_to_rigid_group,
-                    device=device,
-                    requires_grad=False,
-                ),
-                persistent=False,
-            )
-        if not hasattr(self, "atom_mask"):
-            self.register_buffer(
-                "atom_mask",
-                torch.tensor(
-                    restype_atom14_mask,
-                    dtype=float_dtype,
-                    device=device,
-                    requires_grad=False,
-                ),
-                persistent=False,
-            )
-        if not hasattr(self, "lit_positions"):
-            self.register_buffer(
-                "lit_positions",
-                torch.tensor(
-                    restype_atom14_rigid_group_positions,
-                    dtype=float_dtype,
-                    device=device,
-                    requires_grad=False,
-                ),
-                persistent=False,
-            )
-
-    def torsion_angles_to_frames(self, r, alpha, f):
-        # Lazily initialize the residue constants on the correct device
-        self._init_residue_constants(alpha.dtype, alpha.device)
-        # Separated purely to make testing less annoying
-        return torsion_angles_to_frames(r, alpha, f, self.default_frames)
-
-    def frames_and_literature_positions_to_atom14_pos(
-        self, r, f  # [*, N, 8]  # [*, N]
-    ):
-        # Lazily initialize the residue constants on the correct device
-        self._init_residue_constants(r.get_rots().dtype, r.get_rots().device)
-        return frames_and_literature_positions_to_atom14_pos(
-            r,
-            f,
-            self.default_frames,
-            self.group_idx,
-            self.atom_mask,
-            self.lit_positions,
-        )
-
 # define the model
 class SAXSMSAAttention(nn.Module):
   def __init__(self,
@@ -382,20 +73,21 @@ class SAXSMSAAttention(nn.Module):
                c_k: int,
                c_v: int,
                c_hidden: int,
-               no_heads: int,):
+               no_heads: int,
+               temperature: float = 1.,):
     super(SAXSMSAAttention, self).__init__()
     
     self.c_hidden = c_hidden
     self.no_heads = no_heads
+    self.temperature = temperature
 
     self.layer_norm_q = LayerNorm(c_q)
-    self.layer_norm_k = LayerNorm(c_k)
+    # self.layer_norm_k = LayerNorm(c_k)
     
-    self.linear_q = Linear(c_q, c_hidden * no_heads)
-    self.linear_k = Linear(c_k, c_hidden * no_heads)
-    self.linear_v = Linear(c_v, c_hidden * no_heads)
-    self.linear_o = Linear(c_hidden * no_heads, c_q)
-    self.sigmoid = nn.Sigmoid()  # TODO - do I want to use this for gating?
+    self.linear_q = Linear(c_q, c_hidden * no_heads, init="glorot")
+    self.linear_k = Linear(c_k, c_hidden * no_heads, init="glorot")
+    self.linear_v = Linear(c_v, c_hidden * no_heads, init="glorot")
+    self.linear_o = Linear(c_hidden * no_heads, c_q, init="glorot")
 
   def forward(self,
               msa: torch.Tensor, 
@@ -408,7 +100,8 @@ class SAXSMSAAttention(nn.Module):
 
     # Normalize inputs
     q_x = self.layer_norm_q(q_x)  # [b, m*r, c]
-    kv_x = self.layer_norm_k(k_x)  # [b, s, 1]
+    # kv_x = self.layer_norm_k(k_x)  # [b, s, 1]
+    kv_x = k_x   # [b, s, 1] skip layer normalization here since 1 dimension
 
     q = self.linear_q(q_x)  # [b, m*r, h*c_hidden]
     k = self.linear_k(kv_x)  # [b, s, h*c_hidden]
@@ -432,7 +125,7 @@ class SAXSMSAAttention(nn.Module):
 
     # Compute attention weights
     a = torch.matmul(q, k)  # [b, h, m*r, s]  # NOTE - large matrix - may need to reduce
-    a = F.softmax(a, dim=-1)  # [b, h, m*r, s]
+    a = F.softmax(a / self.temperature, dim=-1)  # [b, h, m*r, s]
 
     # Compute weighted sum of values
     o = torch.matmul(a, v)  # [b, h, m*r, c_hidden]
@@ -453,19 +146,21 @@ class SAXSPairAttention(nn.Module):
             c_k: int,
             c_v: int,
             c_hidden: int,
-            no_heads: int,):
+            no_heads: int,
+            temperature: float = 1.,):
     super(SAXSPairAttention, self).__init__()
 
     self.c_hidden = c_hidden
     self.no_heads = no_heads
+    self.temperature = temperature
 
     self.layer_norm_q = LayerNorm(c_q)
-    self.layer_norm_k = LayerNorm(c_k)
+    # self.layer_norm_k = LayerNorm(c_k)
     
-    self.linear_q = Linear(c_q, c_hidden * no_heads)
-    self.linear_k = Linear(c_k, c_hidden * no_heads)
-    self.linear_v = Linear(c_v, c_hidden * no_heads)
-    self.linear_o = Linear(c_hidden * no_heads, c_q)
+    self.linear_q = Linear(c_q, c_hidden * no_heads, init="glorot")
+    self.linear_k = Linear(c_k, c_hidden * no_heads, init="glorot")
+    self.linear_v = Linear(c_v, c_hidden * no_heads, init="glorot")
+    self.linear_o = Linear(c_hidden * no_heads, c_q, init="glorot")
     self.sigmoid = nn.Sigmoid()  # TODO - do I want to use this for gating?
 
   def forward(self,
@@ -479,7 +174,7 @@ class SAXSPairAttention(nn.Module):
 
     # Normalize inputs
     q_x = self.layer_norm_q(q_x)  # [b, r, r, c]
-    kv_x = self.layer_norm_k(k_x)  # [b, s, 1]
+    kv_x = k_x   # [b, s, 1] skip layer normalization here since 1 dimension
 
     q = self.linear_q(q_x)  # [b, r*r, h*c_hidden]
     k = self.linear_k(kv_x)  # [b, s, h*c_hidden]
@@ -503,7 +198,7 @@ class SAXSPairAttention(nn.Module):
 
     # Compute attention weights
     a = torch.matmul(q, k)  # [b, h, r*r, s]  # NOTE - large matrix - may need to reduce
-    a = F.softmax(a, dim=-1)  # [b, h, r*r, s]
+    a = F.softmax(a / self.temperature, dim=-1)  # [b, h, r*r, s]
 
     # Compute weighted sum of values
     o = torch.matmul(a, v)  # [b, h, r*r, c_hidden]

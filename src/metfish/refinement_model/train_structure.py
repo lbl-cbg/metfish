@@ -252,8 +252,6 @@ def main():
     target_saxs = batch['saxs']
     
     print(f"Optimizing sequence: {seq_name}")
-    print(f"Sequence length: {batch['aatype'].shape[-1]}")
-    print(f"SAXS curve length: {target_saxs.shape[-1]}")
     
     # Initialize model
     model = StructureModel(config, training=False)  # Use eval mode for base model
@@ -270,9 +268,6 @@ def main():
                     if 'weight' in name and param.dim() >= 2:
                         # Xavier initialization for weights with 2+ dimensions
                         torch.nn.init.xavier_normal_(param)
-                    elif 'weight' in name and param.dim() == 1:
-                        # Normal initialization for 1D weights
-                        torch.nn.init.normal_(param, mean=0.0, std=0.02)
                     elif 'bias' in name:
                         # Zero initialization for bias terms
                         torch.nn.init.zeros_(param)
