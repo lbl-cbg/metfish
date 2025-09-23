@@ -22,8 +22,8 @@ import numpy as np
 def save_structure_output(outputs, batch, output_path, seq_name, iteration=None):
     """Save predicted structure to PDB file"""
     # Extract relevant information for structure output
-    out_to_prot_keys = ['final_atom_positions', 'final_atom_mask', 'aatype', 'residue_index']
-    
+    out_to_prot_keys = ['final_atom_positions', 'final_atom_mask', 'aatype', 'seq_length', 'residue_index', 'plddt']
+
     output_info = {}
     for key in out_to_prot_keys:
         if key in outputs:
@@ -208,7 +208,7 @@ def main():
     pdb_dir = f"{args.data_dir}/pdbs"
     saxs_dir = f"{args.data_dir}/saxs_r"
     msa_dir = f"{args.data_dir}/msa"
-    training_csv = f"{args.data_dir}/{args.test_csv_name}"
+    training_csv = f"{args.test_csv_name}"
     
     # Create output directories
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
@@ -219,7 +219,7 @@ def main():
     print(f"Checkpoint path: {args.ckpt_path}")
     
     # Setup model configuration
-    config = model_config('generating', train=False, low_prec=True)  # Use eval mode
+    config = model_config('generating', train=True, low_prec=True) 
     data_config = config.data
     data_config.common.use_templates = False
     data_config.common.max_recycling_iters = 1
@@ -254,7 +254,7 @@ def main():
     print(f"Optimizing sequence: {seq_name}")
     
     # Initialize model
-    model = StructureModel(config, training=False)  # Use eval mode for base model
+    model = StructureModel(config, training=True)  # Use eval mode for base model
     
     # Load pretrained weights
     model.load_pretrained_weights(args.ckpt_path, strict=False)

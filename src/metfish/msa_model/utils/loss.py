@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
 import logging
 import ml_collections
 import numpy as np
@@ -1558,25 +1559,40 @@ def compute_saxs(all_atom_pos: torch.Tensor,
     # Calculate histogram (note no torch hist implementation with weights for cuda)
     if dmax is None:
         dmax = distances.max()
-        dmax = np.ceil(dmax / step) * step
-    bin_edges = torch.arange(0, dmax, step, device=distances.device)
-    bin_indices = torch.bucketize(distances, bin_edges, right=False) - 1
-
-    hist_torch = torch.zeros(len(bin_edges) - 1, device=distances.device)
-    for i in range(len(bin_edges) - 1):
-        hist_torch[i] = torch.sum(dist_weights[bin_indices == i])
+        dmax = torch.ceil(dmax / step) * step
+        dmax = dmax.item()
+    bin_edges = torch.arange(0, dmax + 0.1, step, device=distances.device)
+    hist_torch = differentiable_histogram(distances, dist_weights.to(distances.device), bin_edges)
 
     p = torch.cat((torch.tensor([0], device=distances.device), hist_torch / hist_torch.sum()))
 
     return p
 
+def differentiable_histogram(values, weights, bin_edges):
+    # Create soft assignments to bins using sigmoid differences
+    bin_width = bin_edges[1] - bin_edges[0]
+
+    # For each value and bin edge, calculate soft assignment
+    hist = torch.zeros(len(bin_edges) - 1, device=values.device)
+
+    for i in range(len(bin_edges) - 1):
+        # Calculate how much each value belongs to this bin using smooth approximation
+        left_score = torch.sigmoid((values - bin_edges[i]) / (bin_width * 0.1))
+        right_score = torch.sigmoid((bin_edges[i+1] - values) / (bin_width * 0.1))
+        in_bin_score = left_score * right_score  # Smooth indicator of being in the bin
+
+        # Weight and sum
+        hist[i] = torch.sum(weights * in_bin_score)
+
+    return hist
+
 def saxs_loss(all_atom_pred_pos: torch.Tensor,
               all_atom_mask: torch.Tensor,
               saxs: torch.Tensor,
-              step: float = 0.1,
+              step: float = 0.5,
               dmax: float = None,
               eps: float = 1e-10,
-              use_l1: bool = False,
+              use_l1: bool = True,
     **kwargs
 ) -> torch.Tensor:
     """    Computes saxs loss.
@@ -1601,19 +1617,31 @@ def saxs_loss(all_atom_pred_pos: torch.Tensor,
     for (pred_pos, mask) in zip(all_atom_pred_pos, all_atom_mask):  # where pred_pos is a single item in the batch
         p_pred = compute_saxs(all_atom_pos=pred_pos, all_atom_mask=mask, step=step, dmax=dmax)
         pred_saxs.append(p_pred)
-
-    pred_saxs = torch.stack(pred_saxs).to(saxs.device)
-    true_saxs = saxs
+    pred_saxs = torch.stack(pred_saxs)
+    
+    # Pad pred_saxs to shape [1, 512]
+    current_size = pred_saxs.shape[-1]
+    target_size = 512
+    if current_size < target_size:
+        pad_size = target_size - current_size
+        pred_saxs = torch.nn.functional.pad(pred_saxs, (0, pad_size), mode='constant', value=0)
+    
+    saxs = saxs[:,:,0]
+    # recalculate for true positions since input structure could vary in binsize
+    # saxs is the true SAXS profile from the batch
+    # Check that saxs and pred_saxs have the same shape
+    if saxs.shape != pred_saxs.shape:
+        raise ValueError(f"Shape mismatch: pred_saxs shape {pred_saxs.shape}, saxs shape {saxs.shape}. Ensure batch['saxs'] matches the predicted SAXS profile shape.")
 
     if use_l1:
         # calculate the L1 divergence of the SAXS profiles
         l1_loss = nn.L1Loss(reduction="sum")
-        loss = l1_loss(pred_saxs, true_saxs)
+        loss = l1_loss(pred_saxs, saxs)
     else:
         # calculate the KL divergence of the SAXS profiles
         pred_saxs_log = torch.log((pred_saxs + eps) / (pred_saxs + eps).sum(dim=1, keepdim=True))  # pred_saxs already probabilities so just take log
         kl_loss = nn.KLDivLoss(reduction="batchmean")
-        loss = kl_loss(pred_saxs_log, true_saxs)
+        loss = kl_loss(pred_saxs_log, saxs)
 
     return loss
 
@@ -1639,43 +1667,50 @@ class AlphaFoldLossWithSAXS(nn.Module):
                 )
             )
 
-        loss_fns = {
-            "distogram": lambda: distogram_loss(
-                logits=out["distogram_logits"],
-                **{**batch, **self.config.distogram},
-            ),
-            "experimentally_resolved": lambda: experimentally_resolved_loss(
-                logits=out["experimentally_resolved_logits"],
-                **{**batch, **self.config.experimentally_resolved},
-            ),
-            "fape": lambda: fape_loss(
-                out,
-                batch,
-                self.config.fape,
-            ),
-            "plddt_loss": lambda: lddt_loss(
-                logits=out["lddt_logits"],
-                all_atom_pred_pos=out["final_atom_positions"],
-                **{**batch, **self.config.plddt_loss},
-            ),
-            "masked_msa": lambda: masked_msa_loss(
-                logits=out["masked_msa_logits"],
-                **{**batch, **self.config.masked_msa},
-            ),
-            "supervised_chi": lambda: supervised_chi_loss(
-                out["sm"]["angles"],
-                out["sm"]["unnormalized_angles"],
-                **{**batch, **self.config.supervised_chi},
-            ),
-            "violation": lambda: violation_loss(
-                out["violation"],
-                **batch,
-            ),
-            'saxs_loss': lambda: saxs_loss(
-                all_atom_pred_pos=out["final_atom_positions"],
-                **{**batch, **self.config.saxs_loss},
-            )
-        }
+        if self.config.saxs_loss_only:
+            loss_fns = {
+                'saxs_loss': lambda: saxs_loss(
+                    all_atom_pred_pos=out["final_atom_positions"],
+                    **{**batch, **self.config.saxs_loss},
+                )}
+        else:
+            loss_fns = {
+                "distogram": lambda: distogram_loss(
+                    logits=out["distogram_logits"],
+                    **{**batch, **self.config.distogram},
+                ),
+                "experimentally_resolved": lambda: experimentally_resolved_loss(
+                    logits=out["experimentally_resolved_logits"],
+                    **{**batch, **self.config.experimentally_resolved},
+                ),
+                "fape": lambda: fape_loss(
+                    out,
+                    batch,
+                    self.config.fape,
+                ),
+                "plddt_loss": lambda: lddt_loss(
+                    logits=out["lddt_logits"],
+                    all_atom_pred_pos=out["final_atom_positions"],
+                    **{**batch, **self.config.plddt_loss},
+                ),
+                "masked_msa": lambda: masked_msa_loss(
+                    logits=out["masked_msa_logits"],
+                    **{**batch, **self.config.masked_msa},
+                ),
+                "supervised_chi": lambda: supervised_chi_loss(
+                    out["sm"]["angles"],
+                    out["sm"]["unnormalized_angles"],
+                    **{**batch, **self.config.supervised_chi},
+                ),
+                "violation": lambda: violation_loss(
+                    out["violation"],
+                    **batch,
+                ),
+                'saxs_loss': lambda: saxs_loss(
+                    all_atom_pred_pos=out["final_atom_positions"],
+                    **{**batch, **self.config.saxs_loss},
+                )
+            }
 
         if(self.config.tm.enabled):
             loss_fns["tm"] = lambda: tm_loss(

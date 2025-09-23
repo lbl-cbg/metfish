@@ -386,15 +386,17 @@ def write_conformers(out_dir, name, protein, pdb_ext='.pdb'):
 
 def output_to_protein(output):
     """Returns the pbd (file) string from the model given the model output."""
+    num_res = output["seq_length"][0][0]
     output = tensor_tree_map(lambda x: x.cpu().numpy(), output)
     final_atom_positions = output['final_atom_positions']
-    final_atom_mask = output["atom37_atom_exists"]
+    final_atom_mask = output["final_atom_mask"]
+    #final_atom_mask = output["atom37_atom_exists"]
     pred = Protein(
-        aatype=output["aatype"],
-        atom_positions=final_atom_positions[0],
-        atom_mask=final_atom_mask,
-        residue_index=output["residue_index"] + 1,
-        b_factors=np.repeat(output["plddt"][...,None], residue_constants.atom_type_num, axis=-1)[0],
+        aatype=output["aatype"][0][:num_res,0],
+        atom_positions=final_atom_positions[0][:num_res,:,:],
+        atom_mask=final_atom_mask[0][:num_res,:],
+        residue_index=(output["residue_index"] + 1)[0][:num_res,0],
+        b_factors=np.repeat(output["plddt"][...,None], residue_constants.atom_type_num, axis=-1)[0][:num_res,:],
         chain_index=output["chain_index"] if "chain_index" in output else None,
     )
     

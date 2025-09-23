@@ -2,8 +2,37 @@
 import torch
 from openfold.model.model import AlphaFold
 
-from metfish.msa_model.utils.loss import compute_saxs
+
+from metfish.msa_model.utils.loss import compute_saxs,saxs_loss
 from metfish.refinement_model.model.saxs_structure import StructureSAXS
+
+# --- Copied from train_structure.py to avoid circular import ---
+from metfish.utils import output_to_protein
+from openfold.np import protein
+import os
+
+def save_structure_output(outputs, batch, output_path, seq_name, iteration=None):
+    """Save predicted structure to PDB file"""
+    # Extract relevant information for structure output
+    out_to_prot_keys = ['final_atom_positions', 'final_atom_mask', 'aatype', 'seq_length', 'residue_index', 'plddt']
+
+    output_info = {}
+    for key in out_to_prot_keys:
+        if key in outputs:
+            output_info[key] = outputs[key].clone().detach().cpu()
+        elif key in batch:
+            output_info[key] = batch[key].clone().detach().cpu()
+    # Create protein object
+    unrelaxed_protein = output_to_protein(output_info)
+    # Save to PDB file
+    if iteration is not None:
+        pdb_path = f"{output_path}/{seq_name}_iter_{iteration:04d}.pdb"
+    else:
+        pdb_path = f"{output_path}/{seq_name}_optimized.pdb"
+    os.makedirs(os.path.dirname(pdb_path), exist_ok=True)
+    with open(pdb_path, 'w') as f:
+        f.write(protein.to_pdb(unrelaxed_protein))
+    return pdb_path
 
 
 
@@ -113,14 +142,10 @@ class StructureModel(torch.nn.Module):
         pred_positions = outputs['final_atom_positions']  # [*, N, 37, 3]
         
         # Compute SAXS curve from predicted structure
-        saxs_loss = compute_saxs(
-            positions=pred_positions,
-            target_saxs=batch['saxs'],
-            atom_mask=outputs.get('final_atom_mask', None),
-            # Add other necessary parameters based on your compute_saxs function
-        )
-        
-        return saxs_loss
+
+        saxs_loss_calculated= saxs_loss(all_atom_pred_pos=pred_positions, all_atom_mask=outputs.get('final_atom_mask', None), saxs=batch['saxs'])
+
+        return saxs_loss_calculated
     
     def training_step(self, batch, optimizer):
         """Single training step"""
@@ -184,7 +209,7 @@ class StructureModel(torch.nn.Module):
 
 
 def train_structure_model(model, train_loader, val_loader, num_epochs=100, 
-                         learning_rate=1e-4, device='cuda', save_path=None):
+                         learning_rate=1e-4, device='cuda', save_path=None, output_dir=None):
     """
     Complete training loop for StructureModel
     
@@ -210,7 +235,7 @@ def train_structure_model(model, train_loader, val_loader, num_epochs=100,
     # Move model to device
     model = model.to(device)
     
-    best_val_loss = float('inf')
+    best_eval_loss = float('inf')
     
     print(f"Starting training with {len(trainable_params)} trainable parameters")
     print(f"Training on {device}")
@@ -218,37 +243,54 @@ def train_structure_model(model, train_loader, val_loader, num_epochs=100,
     for epoch in range(num_epochs):
         print(f"\nEpoch {epoch+1}/{num_epochs}")
         print("-" * 50)
-        
         # Training
         train_loss = model.train_epoch(train_loader, optimizer, device)
         print(f"Training Loss: {train_loss:.6f}")
-        
-        # Validation
-        val_loss = model.validate(val_loader, device)
-        print(f"Validation Loss: {val_loss:.6f}")
-        
-        # Learning rate scheduling
-        scheduler.step(val_loss)
-        
-        # Save best model
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
+
+        # Evaluation (save PDB for first batch, keep model in training mode)
+        eval_loss = 0.0
+        num_batches = 0
+        for batch in val_loader:
+            batch = {k: v.to(device) if torch.is_tensor(v) else v for k, v in batch.items()}
+            outputs = model.forward(batch)
+            loss = model.compute_loss(outputs, batch)
+            eval_loss += loss.item()
+            num_batches += 1
+            # Save first batch for PDB output (or you can save all if desired)
+            if num_batches == 1 and output_dir is not None:
+                pdb_dir_epoch = f"{output_dir}/epoch_pdb"
+                seq_name_epoch = f'eval_sample_epoch{epoch+1}'
+                save_structure_output(outputs, batch, pdb_dir_epoch, seq_name_epoch, iteration=epoch)
+        eval_loss /= max(num_batches, 1)
+        print(f"Evaluation Loss: {eval_loss:.6f}")
+        scheduler.step(eval_loss)
+
+        # Save best model and PDB
+        if eval_loss < best_eval_loss:
+            best_eval_loss = eval_loss
             if save_path:
                 torch.save({
                     'epoch': epoch,
                     'model_state_dict': model.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict(),
                     'train_loss': train_loss,
-                    'val_loss': val_loss,
+                    'eval_loss': eval_loss,
                 }, save_path)
-                print(f"Saved best model with validation loss: {val_loss:.6f}")
-        
+                print(f"Saved best model with evaluation loss: {eval_loss:.6f}")
+            # Save PDB for best model
+            if output_dir is not None:
+                pdb_dir = f"{output_dir}/best_pdb"
+                seq_name = 'best_eval_sample'
+                save_structure_output(outputs, batch, pdb_dir, seq_name, iteration=epoch)
+
         # Early stopping
         if optimizer.param_groups[0]['lr'] < 1e-7:
             print("Learning rate too small, stopping training")
             break
-    
-    print(f"\nTraining completed. Best validation loss: {best_val_loss:.6f}")
+
+    print(f"\nTraining completed. Best evaluation loss: {best_eval_loss:.6f}")
+    if output_dir is not None:
+        print(f"Best model PDB saved to: {output_dir}/best_pdb")
     return model
 
 
