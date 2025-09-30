@@ -11,16 +11,12 @@ class MSASAXSDataset(Dataset):
 
   def __init__(self, config, path, mode=None,
                data_dir=None,
-               pdb_dir=None, pdb_prefix=None, pdb_ext=None,
                msa_dir=None,
                saxs_dir=None, saxs_ext=None):
       self.pdb_chains = pd.read_csv(path, index_col='name')#.sort_index()
       self.mode = 'train' if mode is None else 'predict'
       self.data_dir = data_dir
       self.msa_dir = msa_dir
-      self.pdb_dir = pdb_dir
-      self.pdb_prefix = pdb_prefix if pdb_prefix is not None else "fixed_"
-      self.pdb_ext = pdb_ext or ".pdb"
       self.saxs_dir = saxs_dir
       self.saxs_ext = saxs_ext or '.pdb.pr.csv'  # default
       self.data_pipeline = DataPipeline(template_featurizer=None)
@@ -32,26 +28,26 @@ class MSASAXSDataset(Dataset):
   def __getitem__(self, idx):
       item = self.pdb_chains.iloc[idx]
       
-      # sequence data
+      # Sequence data
       sequence_feats = self.data_pipeline.process_str(item.seqres, item.name)
       
-      # msa data
+      # MSA data
       msa_id = item.msa_id if hasattr(item, 'msa_id') else item.name
       msa_features = self.data_pipeline._process_msa_feats(f'{self.msa_dir}/{msa_id}', item.seqres, alignment_index=None)
       # NOTE - could also manipulate the clustering process here
 
-      # saxs data
+      # SAXS data
       saxs_features = self.data_pipeline._process_saxs_feats(f'{self.saxs_dir}/{item.name}{self.saxs_ext}')
       # TODO - account for cropped sequences by processing saxs after other features are processed or excluding seq < 256 length?
 
-      # pdb data - will only load during training
-      if self.mode == 'train':
-        pdb_features = self.data_pipeline.process_pdb_feats(f'{self.pdb_dir}/{self.pdb_prefix}{item.name}{self.pdb_ext}', is_distillation=False)
-        data = {**sequence_feats, **msa_features, **saxs_features, **pdb_features}
-      else:
-        data = {**sequence_feats, **msa_features, **saxs_features}
+      # PDB data - would only load during training (currently disabled)
+      #if self.mode == 'train':
+      #  pdb_features = self.data_pipeline.process_pdb_feats(f'{self.pdb_dir}/{self.pdb_prefix}{item.name}{self.pdb_ext}', is_distillation=False)
+      #  data = {**sequence_feats, **msa_features, **saxs_features, **pdb_features}
+      #else:
+      data = {**sequence_feats, **msa_features, **saxs_features}
 
-      feats = self.feature_pipeline.process_features(data, mode=self.mode)
+      feats = self.feature_pipeline.process_features(data, mode='predict')
 
       feats["batch_idx"] = torch.tensor(
             [idx for _ in range(feats["aatype"].shape[-1])],

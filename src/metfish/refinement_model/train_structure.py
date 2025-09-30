@@ -2,6 +2,15 @@
 """
 Runtime optimization script for StructureModel with single sequence/SAXS pair
 Optimizes SingleOptimizer parameters to fit a single sequence to its SAXS curve
+
+Output Structure:
+- best/: Contains the best structures (when loss improves) + best_model.pth
+- intermediate/: Contains ALL generated structures during training (if save_all_structures=True)
+                or structures saved at regular intervals (if save_interval_only=True)
+- initial/: Contains the initial structure before optimization
+- final/: Contains the final structure after optimization
+- loss_history.npy: Array of loss values for each iteration
+- optimization_summary.txt: Summary of optimization results
 """
 
 import argparse
@@ -50,7 +59,8 @@ def save_structure_output(outputs, batch, output_path, seq_name, iteration=None)
 
 def optimize_single_sequence(model, batch, target_saxs, seq_name, 
                            num_iterations=1000, learning_rate=1e-3, 
-                           output_dir=None, save_frequency=50, device='cuda'):
+                           output_dir=None, save_frequency=50, device='cuda',
+                           save_all_structures=True):
     """
     Optimize SingleOptimizer parameters for a single sequence to match SAXS curve
     
@@ -62,14 +72,20 @@ def optimize_single_sequence(model, batch, target_saxs, seq_name,
         num_iterations: Number of optimization iterations
         learning_rate: Learning rate for optimization
         output_dir: Directory to save outputs
-        save_frequency: Save structures every N iterations
+        save_frequency: Save structures every N iterations (for checkpoints)
         device: Device to run on
+        save_all_structures: If True, save all structures to intermediate folder
     """
     
     print(f"\nOptimizing sequence: {seq_name}")
     print(f"Target SAXS shape: {target_saxs.shape}")
     print(f"Number of iterations: {num_iterations}")
     print(f"Learning rate: {learning_rate}")
+    if save_all_structures:
+        print(f"WARNING: All structures will be saved to intermediate folder - this may use significant disk space!")
+        print(f"Expected storage: ~{num_iterations * 0.5:.1f} MB (approximate)")
+    else:
+        print(f"Structures will be saved every {save_frequency} iterations to intermediate folder")
     
     # Setup optimizer for SingleOptimizer parameters only
     trainable_params = model.get_trainable_parameters()
@@ -133,10 +149,16 @@ def optimize_single_sequence(model, batch, target_saxs, seq_name,
             current_lr = optimizer.param_groups[0]['lr']
             print(f"{iteration:8d} | {loss_value:8.6f} | {best_loss:8.6f} | {current_lr:.2e}")
         
-        # Save intermediate structures
-        if output_dir and save_frequency > 0 and iteration % save_frequency == 0:
-            intermediate_dir = f"{output_dir}/intermediate"
-            save_structure_output(outputs, batch, intermediate_dir, seq_name, iteration)
+        # Save structures based on configuration
+        if output_dir:
+            if save_all_structures:
+                # Save ALL structures in intermediate folder
+                intermediate_dir = f"{output_dir}/intermediate"
+                save_structure_output(outputs, batch, intermediate_dir, seq_name, iteration)
+            elif save_frequency > 0 and iteration % save_frequency == 0:
+                # Save structures at specific intervals only
+                intermediate_dir = f"{output_dir}/intermediate"
+                save_structure_output(outputs, batch, intermediate_dir, seq_name, iteration)
         
         # Early stopping if loss is very small
         if loss_value < 1e-8:
@@ -185,8 +207,6 @@ def main():
                        help="Path to pretrained Lightning checkpoint")
     parser.add_argument("--test_csv_name", type=str, default="input.csv",
                        help="Name of the CSV file with dataset info (should contain single sequence)")
-    parser.add_argument("--pdb_ext", type=str, default=".pdb",
-                       help="PDB file extension")
     parser.add_argument("--saxs_ext", type=str, default="_atom_only.csv",
                        help="SAXS file extension")
     
@@ -199,13 +219,16 @@ def main():
                        help="Index of sequence to optimize (if multiple in CSV)")
     parser.add_argument("--save_frequency", type=int, default=50,
                        help="Save intermediate structures every N iterations")
+    parser.add_argument("--save_all_structures", action="store_true", default=True,
+                       help="Save all structures to intermediate folder (default: True)")
+    parser.add_argument("--save_interval_only", action="store_true",
+                       help="Only save structures at intervals (overrides save_all_structures)")
     parser.add_argument("--random_init", action="store_true",
                        help="Randomly initialize SingleOptimizer parameters")
     
     args = parser.parse_args()
     
     # Setup paths
-    pdb_dir = f"{args.data_dir}/pdbs"
     saxs_dir = f"{args.data_dir}/saxs_r"
     msa_dir = f"{args.data_dir}/msa"
     training_csv = f"{args.test_csv_name}"
@@ -230,10 +253,7 @@ def main():
         training_csv, 
         msa_dir=msa_dir, 
         saxs_dir=saxs_dir, 
-        pdb_dir=pdb_dir, 
         saxs_ext=args.saxs_ext, 
-        pdb_prefix='', 
-        pdb_ext=args.pdb_ext
     )
     
     print(f"Dataset size: {len(dataset)}")
@@ -292,6 +312,9 @@ def main():
         save_structure_output(initial_outputs, batch, initial_dir, seq_name)
         print(f"Initial loss: {initial_loss:.6f}")
     
+    # Determine structure saving behavior
+    save_all_structures = args.save_all_structures and not args.save_interval_only
+    
     # Run optimization
     optimized_model, loss_history, best_loss = optimize_single_sequence(
         model=model,
@@ -302,7 +325,8 @@ def main():
         learning_rate=args.learning_rate,
         output_dir=args.output_dir,
         save_frequency=args.save_frequency,
-        device=device
+        device=device,
+        save_all_structures=save_all_structures
     )
     
     print(f"\nOptimization Results:")
