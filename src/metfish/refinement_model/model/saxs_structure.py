@@ -262,6 +262,38 @@ class SingleOptimizer(nn.Module):
         # Residual connection
         return add(s, s_out, inplace=inplace_safe)
 
+class SingleOptimizerNew(nn.Module):
+    def __init__(self, c_s: int):
+        """
+        New single representation optimizer that applies learnable weight and bias
+        matrices to transform the single representation as w*s+b.
+        
+        Args:
+            c_s: Single representation channel dimension
+        """
+        super(SingleOptimizerNew, self).__init__()
+        
+        self.c_s = c_s
+        
+        # Learnable weight and bias parameters
+        self.w = nn.Parameter(torch.ones(c_s))
+        self.b = nn.Parameter(torch.zeros(c_s))
+        
+    def forward(self, s: torch.Tensor, inplace_safe: bool = False):
+        """
+        Apply optimization to single representation using w*s+b.
+        
+        Args:
+            s: Single representation tensor [*, N_res, C_s]
+            inplace_safe: Whether to use inplace operations
+            
+        Returns:
+            Modified single representation [*, N_res, C_s]
+        """
+        # Apply learnable weight and bias: w*s+b
+        s_out = self.w * s + self.b
+        return s_out
+
 class StructureSAXS(nn.Module):
     """
     Alphafold 2.
@@ -325,6 +357,14 @@ class StructureSAXS(nn.Module):
             c_s=self.config["evoformer_stack"]["c_s"],
             c_hidden=self.config.get("single_optimizer", {}).get("c_hidden", None)
         )
+        
+        # new single representation optimizer
+        #self.single_optimizer_new = SingleOptimizerNew(
+        #    c_s=self.config["evoformer_stack"]["c_s"]
+        #)
+
+        # Flag to choose which optimizer to use
+        self.use_new_single_optimizer = self.config.get("use_new_single_optimizer", True)
         
         self.evoformer = EvoformerStack(
             **self.config["evoformer_stack"],
@@ -451,7 +491,7 @@ class StructureSAXS(nn.Module):
         no_batch_dims = len(batch_dims)
         n = feats["target_feat"].shape[-2]
         n_seq = feats["msa_feat"].shape[-3]
-        
+
         # Controls whether the model uses in-place operations throughout
         # The dual condition accounts for activation checkpoints
         inplace_safe = not (self.training or torch.is_grad_enabled())
@@ -640,6 +680,9 @@ class StructureSAXS(nn.Module):
         outputs["single"] = s
 
         # Apply single representation optimization
+        #if self.use_new_single_optimizer:
+        #s = self.single_optimizer_new(s, inplace_safe=inplace_safe)
+        #else:
         s = self.single_optimizer(s, inplace_safe=inplace_safe)
         outputs["single"] = s
 

@@ -16,11 +16,13 @@ from metfish.msa_model.data.data_modules import MSASAXSDataset
 from metfish.refinement_model.random_model import StructureModel
 from metfish.utils import output_to_protein
 from openfold.np import protein
+from openfold.np.relax import relax
 import numpy as np
 
 
-def save_structure_output(outputs, batch, output_path, seq_name, iteration=None):
-    """Save predicted structure to PDB file"""
+def save_structure_output(outputs, batch, output_path, seq_name, iteration=None, 
+                         apply_relaxation=False, use_gpu=True):
+    """Save predicted structure to PDB file with optional AMBER relaxation"""
     # Extract relevant information for structure output
     out_to_prot_keys = ['final_atom_positions', 'final_atom_mask', 'aatype', 'seq_length', 'residue_index', 'plddt']
 
@@ -34,23 +36,64 @@ def save_structure_output(outputs, batch, output_path, seq_name, iteration=None)
     # Create protein object
     unrelaxed_protein = output_to_protein(output_info)
     
+    # Apply AMBER relaxation if requested
+    if apply_relaxation:
+        print(f"Applying AMBER relaxation to structure...")
+        try:
+            # Initialize AMBER relaxer with OpenFold defaults
+            amber_relaxer = relax.AmberRelaxation(
+                max_iterations=0,  # 0 means no max limit
+                tolerance=2.39,    # kcal/mol energy tolerance
+                stiffness=10.0,    # kcal/mol/A^2 restraint stiffness
+                exclude_residues=[], # No residues excluded from restraints
+                max_outer_iterations=20,  # Maximum violation-informed iterations
+                use_gpu=use_gpu
+            )
+            
+            # Run relaxation
+            relaxed_pdb_str, debug_data, violations = amber_relaxer.process(
+                prot=unrelaxed_protein
+            )
+            
+            print(f"Relaxation completed:")
+            print(f"  - Initial energy: {debug_data['initial_energy']:.2f} kcal/mol")
+            print(f"  - Final energy: {debug_data['final_energy']:.2f} kcal/mol")
+            print(f"  - RMSD from initial: {debug_data['rmsd']:.3f} Å")
+            print(f"  - Attempts: {debug_data['attempts']}")
+            print(f"  - Violations remaining: {violations.sum()}")
+            
+            # Create relaxed protein object
+            relaxed_protein = protein.from_pdb_string(relaxed_pdb_str)
+            final_protein = relaxed_protein
+            suffix = "_relaxed"
+            
+        except Exception as e:
+            print(f"Relaxation failed: {e}")
+            print("Saving unrelaxed structure instead...")
+            final_protein = unrelaxed_protein
+            suffix = "_unrelaxed"
+    else:
+        final_protein = unrelaxed_protein
+        suffix = "_unrelaxed"
+    
     # Save to PDB file
     if iteration is not None:
-        pdb_path = f"{output_path}/{seq_name}_iter_{iteration:04d}.pdb"
+        pdb_path = f"{output_path}/{seq_name}_iter_{iteration:04d}{suffix}.pdb"
     else:
-        pdb_path = f"{output_path}/{seq_name}_optimized.pdb"
+        pdb_path = f"{output_path}/{seq_name}_optimized{suffix}.pdb"
     
     os.makedirs(os.path.dirname(pdb_path), exist_ok=True)
     
     with open(pdb_path, 'w') as f:
-        f.write(protein.to_pdb(unrelaxed_protein))
+        f.write(protein.to_pdb(final_protein))
     
     return pdb_path
 
 
 def optimize_single_sequence(model, batch, target_saxs, seq_name, 
                            num_iterations=1000, learning_rate=1e-3, 
-                           output_dir=None, save_frequency=50, device='cuda'):
+                           output_dir=None, save_frequency=50, device='cuda',
+                           apply_relaxation=False, relax_frequency=None):
     """
     Optimize SingleOptimizer parameters for a single sequence to match SAXS curve
     
@@ -60,24 +103,101 @@ def optimize_single_sequence(model, batch, target_saxs, seq_name,
         target_saxs: Target SAXS curve to fit
         seq_name: Name of the sequence
         num_iterations: Number of optimization iterations
-        learning_rate: Learning rate for optimization
+        learning_rate: Learning rate for optimization (will be adapted based on initial loss)
         output_dir: Directory to save outputs
         save_frequency: Save structures every N iterations
         device: Device to run on
+        apply_relaxation: Whether to apply AMBER relaxation to structures
+        relax_frequency: Apply relaxation every N iterations (None means only final and best)
     """
     
     print(f"\nOptimizing sequence: {seq_name}")
     print(f"Target SAXS shape: {target_saxs.shape}")
     print(f"Number of iterations: {num_iterations}")
-    print(f"Learning rate: {learning_rate}")
+    
+    # Get initial loss to adapt learning rate and scheduler parameters
+    model.structure_model.eval()  # Use eval mode for initial assessment
+    with torch.no_grad():
+        initial_outputs = model.forward(batch)
+        initial_loss = model.compute_loss(initial_outputs, batch).item()
+    
+    # Adaptive learning rate based on initial loss magnitude
+    if initial_loss > 0.1:
+        adaptive_lr = 0.1
+        factor = 0.5  # More aggressive reduction for high loss
+        patience = 25  # Even shorter patience for faster adaptation
+    elif initial_loss > 0.01:
+        adaptive_lr = 0.01
+        factor = 0.7  # Moderate reduction
+        patience = 35  # Medium patience
+    else:
+        adaptive_lr = 0.001
+        factor = 0.8  # Conservative reduction for fine-tuning
+        patience = 50  # Longer patience for stable convergence
+    
+    print(f"Initial loss: {initial_loss:.6f}")
+    print(f"Adaptive learning rate: {adaptive_lr}")
+    print(f"Scheduler factor: {factor}, patience: {patience}")
     
     # Setup optimizer for SingleOptimizer parameters only
     trainable_params = model.get_trainable_parameters()
-    optimizer = torch.optim.Adam(trainable_params, lr=learning_rate)
+    optimizer = torch.optim.Adam(trainable_params, lr=adaptive_lr)
     
-    # Optional learning rate scheduler
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', factor=0.8, patience=50, min_lr=1e-6, verbose=True
+    # Store best model state for restoration when LR is reduced
+    best_model_state = None
+    best_optimizer_state = None
+    
+    # Custom scheduler that restores best weights before reducing LR
+    class RestoreBestOnPlateauScheduler:
+        def __init__(self, optimizer, mode='min', factor=0.5, patience=15, min_lr=1e-6, verbose=True):
+            self.optimizer = optimizer
+            self.mode = mode
+            self.factor = factor
+            self.patience = patience
+            self.min_lr = min_lr
+            self.verbose = verbose
+            
+            self.best_metric = float('inf') if mode == 'min' else float('-inf')
+            self.num_bad_epochs = 0
+            self.last_epoch = 0
+            self.cooldown_counter = 0
+            
+        def step(self, metric, model_state=None, optimizer_state=None):
+            # Update best metric and reset counter if improvement
+            is_better = metric < self.best_metric if self.mode == 'min' else metric > self.best_metric
+            
+            if is_better:
+                self.best_metric = metric
+                self.num_bad_epochs = 0
+                # Store best states if provided
+                if model_state is not None:
+                    self.best_model_state = model_state
+                if optimizer_state is not None:
+                    self.best_optimizer_state = optimizer_state
+            else:
+                self.num_bad_epochs += 1
+                
+            # Check if we should reduce LR
+            if self.num_bad_epochs >= self.patience:
+                current_lr = self.optimizer.param_groups[0]['lr']
+                if current_lr > self.min_lr:
+                    # Restore best model state before reducing LR
+                    if hasattr(self, 'best_model_state') and self.best_model_state is not None:
+                        if self.verbose:
+                            print(f"\nRestoring best model state (metric: {self.best_metric:.6f}) before reducing LR...")
+                        return {'restore_model': True, 'reduce_lr': True}
+                    else:
+                        if self.verbose:
+                            print(f"\nReducing LR from {current_lr:.2e} to {current_lr * self.factor:.2e}")
+                        for param_group in self.optimizer.param_groups:
+                            param_group['lr'] = max(param_group['lr'] * self.factor, self.min_lr)
+                        self.num_bad_epochs = 0
+                        
+            return {'restore_model': False, 'reduce_lr': False}
+    
+    # Create custom scheduler
+    scheduler = RestoreBestOnPlateauScheduler(
+        optimizer, mode='min', factor=factor, patience=patience, min_lr=1e-6, verbose=True
     )
     
     model.structure_model.train()
@@ -86,6 +206,8 @@ def optimize_single_sequence(model, batch, target_saxs, seq_name,
     loss_history = []
     best_loss = float('inf')
     best_iteration = 0
+    best_model_state = None
+    best_optimizer_state = None
     
     print("\nStarting optimization...")
     print("Iteration | Loss      | Best Loss | LR")
@@ -106,16 +228,27 @@ def optimize_single_sequence(model, batch, target_saxs, seq_name,
         loss_value = loss.item()
         loss_history.append(loss_value)
         
-        # Update best loss
+        # Update best loss and save best model state
         if loss_value < best_loss:
             best_loss = loss_value
             best_iteration = iteration
             
-            # Save best structure
+            # Store best model and optimizer states
+            best_model_state = {k: v.clone() for k, v in model.state_dict().items()}
+            best_optimizer_state = {k: v.clone() if torch.is_tensor(v) else v 
+                                  for k, v in optimizer.state_dict().items()}
+            
+            # Save best structure (with relaxation if requested)
             if output_dir:
                 best_structure_dir = f"{output_dir}/best"
-                pdb_path = save_structure_output(outputs, batch, best_structure_dir, 
-                                               seq_name, iteration)
+                # Apply relaxation only for best structures or at specified frequency
+                should_relax = apply_relaxation and (
+                    relax_frequency is None or iteration % relax_frequency == 0
+                )
+                pdb_path = save_structure_output(
+                    outputs, batch, best_structure_dir, seq_name, iteration,
+                    apply_relaxation=should_relax, use_gpu=('cuda' in device)
+                )
                 # Save best model parameters
                 torch.save({
                     'iteration': iteration,
@@ -124,9 +257,24 @@ def optimize_single_sequence(model, batch, target_saxs, seq_name,
                     'optimizer_state_dict': optimizer.state_dict(),
                 }, f"{output_dir}/best_model.pth")
         
-        # Learning rate scheduling
-        if iteration % 20 == 0:
-            scheduler.step(loss_value)
+        # Learning rate scheduling with best weight restoration
+        scheduler_action = scheduler.step(best_loss, best_model_state, best_optimizer_state)
+        
+        # Restore best weights if scheduler requests it
+        if scheduler_action['restore_model'] and best_model_state is not None:
+            print(f"Restoring best model state from iteration {best_iteration}")
+            model.load_state_dict(best_model_state)
+            optimizer.load_state_dict(best_optimizer_state)
+            
+            # Now reduce learning rate
+            if scheduler_action['reduce_lr']:
+                current_lr = optimizer.param_groups[0]['lr']
+                new_lr = max(current_lr * factor, 1e-6)
+                print(f"Reducing LR from {current_lr:.2e} to {new_lr:.2e}")
+                for param_group in optimizer.param_groups:
+                    param_group['lr'] = new_lr
+                # Reset scheduler patience counter
+                scheduler.num_bad_epochs = 0
         
         # Progress logging
         if iteration % max(1, num_iterations // 20) == 0 or iteration < 10:
@@ -136,7 +284,14 @@ def optimize_single_sequence(model, batch, target_saxs, seq_name,
         # Save intermediate structures
         if output_dir and save_frequency > 0 and iteration % save_frequency == 0:
             intermediate_dir = f"{output_dir}/intermediate"
-            save_structure_output(outputs, batch, intermediate_dir, seq_name, iteration)
+            # Optionally apply relaxation to intermediate structures
+            should_relax = apply_relaxation and (
+                relax_frequency is not None and iteration % relax_frequency == 0
+            )
+            save_structure_output(
+                outputs, batch, intermediate_dir, seq_name, iteration,
+                apply_relaxation=should_relax, use_gpu=('cuda' in device)
+            )
         
         # Early stopping if loss is very small
         if loss_value < 1e-8:
@@ -151,10 +306,13 @@ def optimize_single_sequence(model, batch, target_saxs, seq_name,
     print(f"\nOptimization completed!")
     print(f"Best loss: {best_loss:.6f} at iteration {best_iteration}")
     
-    # Save final structure and results
+    # Save final structure and results (always apply relaxation if requested)
     if output_dir:
         final_dir = f"{output_dir}/final"
-        final_pdb = save_structure_output(outputs, batch, final_dir, seq_name)
+        final_pdb = save_structure_output(
+            outputs, batch, final_dir, seq_name,
+            apply_relaxation=apply_relaxation, use_gpu=('cuda' in device)
+        )
         
         # Save loss history
         np.save(f"{output_dir}/loss_history.npy", np.array(loss_history))
@@ -201,6 +359,10 @@ def main():
                        help="Save intermediate structures every N iterations")
     parser.add_argument("--random_init", action="store_true",
                        help="Randomly initialize SingleOptimizer parameters")
+    parser.add_argument("--apply_relaxation", action="store_true",
+                       help="Apply AMBER relaxation to predicted structures")
+    parser.add_argument("--relax_frequency", type=int, default=None,
+                       help="Apply relaxation every N iterations (None means only final and best)")
     
     args = parser.parse_args()
     
@@ -284,13 +446,12 @@ def main():
     
     print(f"Running optimization on {device}")
     
-    # Save initial structure
+    # Save initial structure (will be calculated again in optimize_single_sequence)
     with torch.no_grad():
         initial_outputs = model.forward(batch)
-        initial_loss = model.compute_loss(initial_outputs, batch).item()
         initial_dir = f"{args.output_dir}/initial"
-        save_structure_output(initial_outputs, batch, initial_dir, seq_name)
-        print(f"Initial loss: {initial_loss:.6f}")
+        save_structure_output(initial_outputs, batch, initial_dir, seq_name,
+                            apply_relaxation=False)  # Don't relax initial structure
     
     # Run optimization
     optimized_model, loss_history, best_loss = optimize_single_sequence(
@@ -302,13 +463,20 @@ def main():
         learning_rate=args.learning_rate,
         output_dir=args.output_dir,
         save_frequency=args.save_frequency,
-        device=device
+        device=device,
+        apply_relaxation=args.apply_relaxation,
+        relax_frequency=args.relax_frequency
     )
     
+    # Get final loss for comparison
+    with torch.no_grad():
+        model.structure_model.eval()
+        final_outputs = model.forward(batch)
+        final_loss = model.compute_loss(final_outputs, batch).item()
+    
     print(f"\nOptimization Results:")
-    print(f"Initial loss: {initial_loss:.6f}")
-    print(f"Final loss: {best_loss:.6f}")
-    print(f"Improvement: {((initial_loss - best_loss) / initial_loss * 100):.2f}%")
+    print(f"Final loss: {final_loss:.6f}")
+    print(f"Best loss during training: {best_loss:.6f}")
     print(f"Results saved to: {args.output_dir}")
 
 
