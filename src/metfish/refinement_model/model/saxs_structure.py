@@ -214,32 +214,46 @@ class SAXSPairAttention(nn.Module):
     return add(pair, o, inplace=inplace_safe)
 
 class SingleOptimizer(nn.Module):
-    def __init__(self, c_s: int, c_hidden: int = None):
+    def __init__(self, c_s: int, c_hidden: int = None, scale_factor: float = 0.1, 
+                 use_layer_norm: bool = False, preserve_norm: bool = True):
         """
-        Single representation optimizer that applies a linear transformation
+        Single representation optimizer that applies a small, controlled transformation
         to modify the single representation.
         
         Args:
             c_s: Single representation channel dimension
-            c_hidden: Hidden dimension (defaults to c_s if not provided)
+            c_hidden: Hidden dimension (defaults to c_s//4 for efficiency if not provided)
+            scale_factor: Scaling factor to control magnitude of changes (default: 0.1)
+            use_layer_norm: Whether to apply layer normalization (default: False, since c_s is already normalized)
+            preserve_norm: Whether to preserve the norm of the input (default: True)
         """
         super(SingleOptimizer, self).__init__()
         
         if c_hidden is None:
-            c_hidden = c_s
+            c_hidden = max(c_s // 4, 32)  # Smaller hidden dim for conservative changes
             
         self.c_s = c_s
         self.c_hidden = c_hidden
+        self.scale_factor = scale_factor
+        self.use_layer_norm = use_layer_norm
+        self.preserve_norm = preserve_norm
         
-        # Layer normalization for input
-        self.layer_norm = LayerNorm(c_s)
+        # Optional layer normalization for input (usually not needed since c_s is pre-normalized)
+        if self.use_layer_norm:
+            self.layer_norm = LayerNorm(c_s)
         
-        # Linear transformation layers
-        self.linear_1 = Linear(c_s, c_hidden)
-        self.linear_2 = Linear(c_hidden, c_s)
+        # Linear transformation layers with smaller initialization
+        self.linear_1 = Linear(c_s, c_hidden, init="relu")
+        self.linear_2 = Linear(c_hidden, c_s)  # Will initialize manually for minimal initial impact
         
-        # Activation function
-        self.activation = nn.ReLU()
+        # Activation function - using GELU for smoother gradients
+        self.activation = nn.GELU()
+        
+        # Manually initialize the second linear layer with small weights for minimal impact
+        with torch.no_grad():
+            # Small random initialization for the final layer
+            self.linear_2.weight.data.normal_(0.0, 0.01)
+            self.linear_2.bias.data.zero_()
         
     def forward(self, s: torch.Tensor, inplace_safe: bool = False):
         """
@@ -252,15 +266,34 @@ class SingleOptimizer(nn.Module):
         Returns:
             Modified single representation [*, N_res, C_s]
         """
-        # Normalize input
-        s_norm = self.layer_norm(s)
+        # Store original for norm preservation
+        if self.preserve_norm:
+            s_norm_orig = torch.norm(s, dim=-1, keepdim=True)
+        
+        # Optional normalization (usually skip since c_s is already well-normalized from Evoformer)
+        if self.use_layer_norm:
+            s_input = self.layer_norm(s)
+        else:
+            s_input = s
         
         # Apply linear transformations
-        s_hidden = self.activation(self.linear_1(s_norm))
+        s_hidden = self.activation(self.linear_1(s_input))
         s_out = self.linear_2(s_hidden)
         
-        # Residual connection
-        return add(s, s_out, inplace=inplace_safe)
+        # Apply scaled residual connection for conservative changes
+        s_scaled = s_out * self.scale_factor
+        
+        # Residual connection with scaled output
+        s_modified = add(s, s_scaled, inplace=inplace_safe)
+        
+        # Preserve the original norm to maintain statistical properties
+        if self.preserve_norm:
+            s_norm_new = torch.norm(s_modified, dim=-1, keepdim=True)
+            # Avoid division by zero
+            s_norm_new = torch.clamp(s_norm_new, min=1e-8)
+            s_modified = s_modified * (s_norm_orig / s_norm_new)
+        
+        return s_modified
 
 class SingleOptimizerNew(nn.Module):
     def __init__(self, c_s: int):
@@ -355,7 +388,10 @@ class StructureSAXS(nn.Module):
         # single representation optimizer
         self.single_optimizer = SingleOptimizer(
             c_s=self.config["evoformer_stack"]["c_s"],
-            c_hidden=self.config.get("single_optimizer", {}).get("c_hidden", None)
+            c_hidden=self.config.get("single_optimizer", {}).get("c_hidden", None),
+            scale_factor=self.config.get("single_optimizer", {}).get("scale_factor", 0.1),
+            use_layer_norm=self.config.get("single_optimizer", {}).get("use_layer_norm", False),
+            preserve_norm=self.config.get("single_optimizer", {}).get("preserve_norm", True)
         )
         
         # new single representation optimizer

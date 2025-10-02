@@ -13,16 +13,14 @@ from torch.utils.data import DataLoader
 # Import your existing modules
 from metfish.msa_model.config import model_config
 from metfish.msa_model.data.data_modules import MSASAXSDataset
-from metfish.refinement_model.random_model import StructureModel
+from metfish.refinement_model.random_model import StructureModel, compute_plddt_loss
 from metfish.utils import output_to_protein
 from openfold.np import protein
-from openfold.np.relax import relax
 import numpy as np
 
 
-def save_structure_output(outputs, batch, output_path, seq_name, iteration=None, 
-                         apply_relaxation=False, use_gpu=True):
-    """Save predicted structure to PDB file with optional AMBER relaxation"""
+def save_structure_output(outputs, batch, output_path, seq_name, iteration=None):
+    """Save predicted structure to PDB file"""
     # Extract relevant information for structure output
     out_to_prot_keys = ['final_atom_positions', 'final_atom_mask', 'aatype', 'seq_length', 'residue_index', 'plddt']
 
@@ -36,56 +34,16 @@ def save_structure_output(outputs, batch, output_path, seq_name, iteration=None,
     # Create protein object
     unrelaxed_protein = output_to_protein(output_info)
     
-    # Apply AMBER relaxation if requested
-    if apply_relaxation:
-        print(f"Applying AMBER relaxation to structure...")
-        try:
-            # Initialize AMBER relaxer with OpenFold defaults
-            amber_relaxer = relax.AmberRelaxation(
-                max_iterations=0,  # 0 means no max limit
-                tolerance=2.39,    # kcal/mol energy tolerance
-                stiffness=10.0,    # kcal/mol/A^2 restraint stiffness
-                exclude_residues=[], # No residues excluded from restraints
-                max_outer_iterations=20,  # Maximum violation-informed iterations
-                use_gpu=use_gpu
-            )
-            
-            # Run relaxation
-            relaxed_pdb_str, debug_data, violations = amber_relaxer.process(
-                prot=unrelaxed_protein
-            )
-            
-            print(f"Relaxation completed:")
-            print(f"  - Initial energy: {debug_data['initial_energy']:.2f} kcal/mol")
-            print(f"  - Final energy: {debug_data['final_energy']:.2f} kcal/mol")
-            print(f"  - RMSD from initial: {debug_data['rmsd']:.3f} Å")
-            print(f"  - Attempts: {debug_data['attempts']}")
-            print(f"  - Violations remaining: {violations.sum()}")
-            
-            # Create relaxed protein object
-            relaxed_protein = protein.from_pdb_string(relaxed_pdb_str)
-            final_protein = relaxed_protein
-            suffix = "_relaxed"
-            
-        except Exception as e:
-            print(f"Relaxation failed: {e}")
-            print("Saving unrelaxed structure instead...")
-            final_protein = unrelaxed_protein
-            suffix = "_unrelaxed"
-    else:
-        final_protein = unrelaxed_protein
-        suffix = "_unrelaxed"
-    
     # Save to PDB file
     if iteration is not None:
-        pdb_path = f"{output_path}/{seq_name}_iter_{iteration:04d}{suffix}.pdb"
+        pdb_path = f"{output_path}/{seq_name}_iter_{iteration:04d}.pdb"
     else:
-        pdb_path = f"{output_path}/{seq_name}_optimized{suffix}.pdb"
+        pdb_path = f"{output_path}/{seq_name}_optimized.pdb"
     
     os.makedirs(os.path.dirname(pdb_path), exist_ok=True)
     
     with open(pdb_path, 'w') as f:
-        f.write(protein.to_pdb(final_protein))
+        f.write(protein.to_pdb(unrelaxed_protein))
     
     return pdb_path
 
@@ -93,7 +51,7 @@ def save_structure_output(outputs, batch, output_path, seq_name, iteration=None,
 def optimize_single_sequence(model, batch, target_saxs, seq_name, 
                            num_iterations=1000, learning_rate=1e-3, 
                            output_dir=None, save_frequency=50, device='cuda',
-                           apply_relaxation=False, relax_frequency=None):
+                           plddt_weight=0.1, plddt_target=90.0):
     """
     Optimize SingleOptimizer parameters for a single sequence to match SAXS curve
     
@@ -107,8 +65,8 @@ def optimize_single_sequence(model, batch, target_saxs, seq_name,
         output_dir: Directory to save outputs
         save_frequency: Save structures every N iterations
         device: Device to run on
-        apply_relaxation: Whether to apply AMBER relaxation to structures
-        relax_frequency: Apply relaxation every N iterations (None means only final and best)
+        plddt_weight: Weight for pLDDT loss component (default: 0.1)
+        plddt_target: Target pLDDT value (default: 90.0)
     """
     
     print(f"\nOptimizing sequence: {seq_name}")
@@ -119,7 +77,7 @@ def optimize_single_sequence(model, batch, target_saxs, seq_name,
     model.structure_model.eval()  # Use eval mode for initial assessment
     with torch.no_grad():
         initial_outputs = model.forward(batch)
-        initial_loss = model.compute_loss(initial_outputs, batch).item()
+        initial_loss = model.compute_loss(initial_outputs, batch, plddt_weight=plddt_weight, plddt_target=plddt_target).item()
     
     # Adaptive learning rate based on initial loss magnitude
     if initial_loss > 0.1:
@@ -210,22 +168,42 @@ def optimize_single_sequence(model, batch, target_saxs, seq_name,
     best_optimizer_state = None
     
     print("\nStarting optimization...")
-    print("Iteration | Loss      | Best Loss | LR")
-    print("-" * 45)
+    print("Iteration | Total Loss | SAXS Loss  | pLDDT Loss | Best Loss | LR")
+    print("-" * 70)
     
     for iteration in range(num_iterations):
         # Forward pass
         optimizer.zero_grad()
         outputs = model.forward(batch)
         
-        # Compute SAXS loss
-        loss = model.compute_loss(outputs, batch)
+        # Compute combined SAXS + pLDDT loss
+        total_loss = model.compute_loss(outputs, batch, plddt_weight=plddt_weight, plddt_target=plddt_target)
+        
+        # Compute individual loss components for logging
+        with torch.no_grad():
+            saxs_loss_individual = model.compute_loss(outputs, batch, plddt_weight=0.0, plddt_target=plddt_target)
+            plddt_scores = outputs.get('plddt', None)
+            if plddt_scores is not None:
+                # Get sequence length from batch
+                seq_length = batch.get('seq_length', None)
+                if seq_length is not None:
+                    try:
+                        # Handle various tensor formats: [[134, 134]], [134], or 134
+                        seq_length = seq_length.squeeze().item()
+                    except (ValueError, RuntimeError):
+                        # Fallback: take first element if squeeze().item() fails
+                        seq_length = seq_length.flatten()[0].item()
+                plddt_loss_individual = compute_plddt_loss(plddt_scores, target_plddt=plddt_target, loss_type='mae', seq_length=seq_length)
+            else:
+                plddt_loss_individual = torch.tensor(0.0, device=outputs['final_atom_positions'].device)
         
         # Backward pass
-        loss.backward()
+        total_loss.backward()
         optimizer.step()
         
-        loss_value = loss.item()
+        loss_value = total_loss.item()
+        saxs_loss_value = saxs_loss_individual.item()
+        plddt_loss_value = plddt_loss_individual.item()
         loss_history.append(loss_value)
         
         # Update best loss and save best model state
@@ -233,21 +211,19 @@ def optimize_single_sequence(model, batch, target_saxs, seq_name,
             best_loss = loss_value
             best_iteration = iteration
             
+            # Print new best loss
+            print(f"*** NEW BEST at iteration {iteration}: Total={loss_value:.6f}, SAXS={saxs_loss_value:.6f}, pLDDT={plddt_loss_value:.6f} ***")
+            
             # Store best model and optimizer states
             best_model_state = {k: v.clone() for k, v in model.state_dict().items()}
             best_optimizer_state = {k: v.clone() if torch.is_tensor(v) else v 
                                   for k, v in optimizer.state_dict().items()}
             
-            # Save best structure (with relaxation if requested)
+            # Save best structure
             if output_dir:
                 best_structure_dir = f"{output_dir}/best"
-                # Apply relaxation only for best structures or at specified frequency
-                should_relax = apply_relaxation and (
-                    relax_frequency is None or iteration % relax_frequency == 0
-                )
                 pdb_path = save_structure_output(
-                    outputs, batch, best_structure_dir, seq_name, iteration,
-                    apply_relaxation=should_relax, use_gpu=('cuda' in device)
+                    outputs, batch, best_structure_dir, seq_name, iteration
                 )
                 # Save best model parameters
                 torch.save({
@@ -279,18 +255,13 @@ def optimize_single_sequence(model, batch, target_saxs, seq_name,
         # Progress logging
         if iteration % max(1, num_iterations // 20) == 0 or iteration < 10:
             current_lr = optimizer.param_groups[0]['lr']
-            print(f"{iteration:8d} | {loss_value:8.6f} | {best_loss:8.6f} | {current_lr:.2e}")
+            print(f"{iteration:8d} | {loss_value:9.6f} | {saxs_loss_value:9.6f} | {plddt_loss_value:9.6f} | {best_loss:8.6f} | {current_lr:.2e}")
         
         # Save intermediate structures
         if output_dir and save_frequency > 0 and iteration % save_frequency == 0:
             intermediate_dir = f"{output_dir}/intermediate"
-            # Optionally apply relaxation to intermediate structures
-            should_relax = apply_relaxation and (
-                relax_frequency is not None and iteration % relax_frequency == 0
-            )
             save_structure_output(
-                outputs, batch, intermediate_dir, seq_name, iteration,
-                apply_relaxation=should_relax, use_gpu=('cuda' in device)
+                outputs, batch, intermediate_dir, seq_name, iteration
             )
         
         # Early stopping if loss is very small
@@ -306,12 +277,11 @@ def optimize_single_sequence(model, batch, target_saxs, seq_name,
     print(f"\nOptimization completed!")
     print(f"Best loss: {best_loss:.6f} at iteration {best_iteration}")
     
-    # Save final structure and results (always apply relaxation if requested)
+    # Save final structure and results
     if output_dir:
         final_dir = f"{output_dir}/final"
         final_pdb = save_structure_output(
-            outputs, batch, final_dir, seq_name,
-            apply_relaxation=apply_relaxation, use_gpu=('cuda' in device)
+            outputs, batch, final_dir, seq_name
         )
         
         # Save loss history
@@ -324,6 +294,8 @@ def optimize_single_sequence(model, batch, target_saxs, seq_name,
             f.write(f"Best loss: {best_loss:.6f}\n")
             f.write(f"Best iteration: {best_iteration}\n")
             f.write(f"Final loss: {loss_value:.6f}\n")
+            f.write(f"pLDDT weight: {plddt_weight}\n")
+            f.write(f"pLDDT target: {plddt_target}\n")
             f.write(f"Final structure: {final_pdb}\n")
         
         print(f"Results saved to: {output_dir}")
@@ -359,10 +331,12 @@ def main():
                        help="Save intermediate structures every N iterations")
     parser.add_argument("--random_init", action="store_true",
                        help="Randomly initialize SingleOptimizer parameters")
-    parser.add_argument("--apply_relaxation", action="store_true",
-                       help="Apply AMBER relaxation to predicted structures")
-    parser.add_argument("--relax_frequency", type=int, default=None,
-                       help="Apply relaxation every N iterations (None means only final and best)")
+    
+    # pLDDT loss arguments
+    parser.add_argument("--plddt_weight", type=float, default=0.1,
+                       help="Weight for pLDDT loss component (default: 0.1)")
+    parser.add_argument("--plddt_target", type=float, default=90.0,
+                       help="Target pLDDT value for optimization (default: 90.0)")
     
     args = parser.parse_args()
     
@@ -427,15 +401,16 @@ def main():
         with torch.no_grad():
             for name, param in model.structure_model.named_parameters():
                 if 'single_optimizer' in name:
-                    if 'weight' in name and param.dim() >= 2:
-                        # Xavier initialization for weights with 2+ dimensions
-                        torch.nn.init.xavier_normal_(param)
+                    if 'weight' in name:
+                        # Small positive weights for conservative changes
+                        # Use uniform distribution in range [0.001, 0.01] for minimal but positive impact
+                        torch.nn.init.uniform_(param, a=0.001, b=0.01)
                     elif 'bias' in name:
-                        # Zero initialization for bias terms
-                        torch.nn.init.zeros_(param)
+                        # Small positive bias terms
+                        torch.nn.init.uniform_(param, a=0.0, b=0.005)
                     else:
-                        # Default normal initialization for other parameters
-                        torch.nn.init.normal_(param, mean=0.0, std=0.02)
+                        # Default small positive initialization for other parameters
+                        torch.nn.init.uniform_(param, a=0.001, b=0.01)
     
     # Setup device
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -450,8 +425,7 @@ def main():
     with torch.no_grad():
         initial_outputs = model.forward(batch)
         initial_dir = f"{args.output_dir}/initial"
-        save_structure_output(initial_outputs, batch, initial_dir, seq_name,
-                            apply_relaxation=False)  # Don't relax initial structure
+        save_structure_output(initial_outputs, batch, initial_dir, seq_name)
     
     # Run optimization
     optimized_model, loss_history, best_loss = optimize_single_sequence(
@@ -464,15 +438,15 @@ def main():
         output_dir=args.output_dir,
         save_frequency=args.save_frequency,
         device=device,
-        apply_relaxation=args.apply_relaxation,
-        relax_frequency=args.relax_frequency
+        plddt_weight=args.plddt_weight,
+        plddt_target=args.plddt_target
     )
     
     # Get final loss for comparison
     with torch.no_grad():
         model.structure_model.eval()
         final_outputs = model.forward(batch)
-        final_loss = model.compute_loss(final_outputs, batch).item()
+        final_loss = model.compute_loss(final_outputs, batch, plddt_weight=args.plddt_weight, plddt_target=args.plddt_target).item()
     
     print(f"\nOptimization Results:")
     print(f"Final loss: {final_loss:.6f}")

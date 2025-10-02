@@ -6,6 +6,38 @@ from openfold.model.model import AlphaFold
 from metfish.msa_model.utils.loss import compute_saxs,saxs_loss
 from metfish.refinement_model.model.saxs_structure import StructureSAXS
 
+def compute_plddt_loss(plddt_scores, target_plddt=90.0, loss_type='mae', seq_length=None):
+    """
+    Compute pLDDT loss to encourage high confidence predictions
+    
+    Args:
+        plddt_scores: Predicted pLDDT scores [*, N_res]
+        target_plddt: Target pLDDT value (default: 90.0 for high confidence)
+        loss_type: Type of loss - 'mse', 'mae', or 'huber'
+        seq_length: Actual sequence length to cutoff plddt_scores (optional)
+    
+    Returns:
+        pLDDT loss scalar (normalized by number of residues)
+    """
+    # Apply sequence length cutoff if provided
+    if seq_length is not None:
+        # Ensure we don't exceed the available plddt_scores length
+        actual_length = min(seq_length, plddt_scores.shape[-1])
+        plddt_scores = plddt_scores[..., :actual_length]
+    
+    target = torch.full_like(plddt_scores, target_plddt)
+    
+    if loss_type == 'mse':
+        loss = torch.nn.functional.mse_loss(plddt_scores, target, reduction='mean')
+    elif loss_type == 'mae':
+        loss = torch.nn.functional.l1_loss(plddt_scores, target, reduction='mean')
+    elif loss_type == 'huber':
+        loss = torch.nn.functional.huber_loss(plddt_scores, target, reduction='mean')
+    else:
+        raise ValueError(f"Unknown loss type: {loss_type}")
+    
+    return loss
+
 # --- Copied from train_structure.py to avoid circular import ---
 from metfish.utils import output_to_protein
 from openfold.np import protein
@@ -136,24 +168,43 @@ class StructureModel(torch.nn.Module):
         outputs = self.structure_model(batch)
         return outputs
     
-    def compute_loss(self, outputs, batch):
-        """Compute SAXS loss for training"""
+    def compute_loss(self, outputs, batch, plddt_weight=0.1, plddt_target=90.0):
+        """Compute combined SAXS + pLDDT loss for training"""
         # Extract predicted atom positions
         pred_positions = outputs['final_atom_positions']  # [*, N, 37, 3]
         
-        # Compute SAXS curve from predicted structure
+        # Compute SAXS loss
+        saxs_loss_calculated = saxs_loss(all_atom_pred_pos=pred_positions, all_atom_mask=outputs.get('final_atom_mask', None), saxs=batch['saxs'])
+        
+        # Compute pLDDT loss
+        plddt_scores = outputs.get('plddt', None)
+        if plddt_scores is not None:
+            # Get sequence length from batch
+            seq_length = batch.get('seq_length', None)
+            if seq_length is not None:
+                try:
+                    # Handle various tensor formats: [[134, 134]], [134], or 134
+                    seq_length = seq_length.squeeze().item()
+                except (ValueError, RuntimeError):
+                    # Fallback: take first element if squeeze().item() fails
+                    seq_length = seq_length.flatten()[0].item()
 
-        saxs_loss_calculated= saxs_loss(all_atom_pred_pos=pred_positions, all_atom_mask=outputs.get('final_atom_mask', None), saxs=batch['saxs'])
-
-        return saxs_loss_calculated
+            plddt_loss_calculated = compute_plddt_loss(plddt_scores, target_plddt=plddt_target, loss_type='mae', seq_length=seq_length)
+        else:
+            plddt_loss_calculated = torch.tensor(0.0, device=pred_positions.device)
+        
+        # Combine losses
+        total_loss = saxs_loss_calculated + plddt_weight * plddt_loss_calculated
+        
+        return total_loss
     
-    def training_step(self, batch, optimizer):
+    def training_step(self, batch, optimizer, plddt_weight=0.1, plddt_target=90.0):
         """Single training step"""
         # Forward pass
         outputs = self.forward(batch)
         
         # Compute loss
-        loss = self.compute_loss(outputs, batch)
+        loss = self.compute_loss(outputs, batch, plddt_weight=plddt_weight, plddt_target=plddt_target)
         
         # Backward pass
         optimizer.zero_grad()
@@ -162,7 +213,7 @@ class StructureModel(torch.nn.Module):
         
         return loss.item()
     
-    def train_epoch(self, dataloader, optimizer, device='cuda'):
+    def train_epoch(self, dataloader, optimizer, device='cuda', plddt_weight=0.1, plddt_target=90.0):
         """Train for one epoch"""
         self.structure_model.train()
         total_loss = 0.0
@@ -174,7 +225,7 @@ class StructureModel(torch.nn.Module):
                     for k, v in batch.items()}
             
             # Training step
-            loss = self.training_step(batch, optimizer)
+            loss = self.training_step(batch, optimizer, plddt_weight=plddt_weight, plddt_target=plddt_target)
             total_loss += loss
             num_batches += 1
             
@@ -184,7 +235,7 @@ class StructureModel(torch.nn.Module):
         avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
         return avg_loss
     
-    def validate(self, dataloader, device='cuda'):
+    def validate(self, dataloader, device='cuda', plddt_weight=0.1, plddt_target=90.0):
         """Validation loop"""
         self.structure_model.eval()
         total_loss = 0.0
@@ -200,125 +251,9 @@ class StructureModel(torch.nn.Module):
                 outputs = self.forward(batch)
                 
                 # Compute loss
-                loss = self.compute_loss(outputs, batch)
+                loss = self.compute_loss(outputs, batch, plddt_weight=plddt_weight, plddt_target=plddt_target)
                 total_loss += loss.item()
                 num_batches += 1
         
         avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
         return avg_loss
-
-
-def train_structure_model(model, train_loader, val_loader, num_epochs=100, 
-                         learning_rate=1e-4, device='cuda', save_path=None, output_dir=None):
-    """
-    Complete training loop for StructureModel
-    
-    Args:
-        model: StructureModel instance
-        train_loader: Training data loader
-        val_loader: Validation data loader
-        num_epochs: Number of training epochs
-        learning_rate: Learning rate for optimizer
-        device: Device to train on
-        save_path: Path to save the best model
-    """
-    
-    # Setup optimizer - only optimize SingleOptimizer parameters
-    trainable_params = model.get_trainable_parameters()
-    optimizer = torch.optim.Adam(trainable_params, lr=learning_rate)
-    
-    # Learning rate scheduler
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', factor=0.5, patience=10, verbose=True
-    )
-    
-    # Move model to device
-    model = model.to(device)
-    
-    best_eval_loss = float('inf')
-    
-    print(f"Starting training with {len(trainable_params)} trainable parameters")
-    print(f"Training on {device}")
-    
-    for epoch in range(num_epochs):
-        print(f"\nEpoch {epoch+1}/{num_epochs}")
-        print("-" * 50)
-        # Training
-        train_loss = model.train_epoch(train_loader, optimizer, device)
-        print(f"Training Loss: {train_loss:.6f}")
-
-        # Evaluation (save PDB for first batch, keep model in training mode)
-        eval_loss = 0.0
-        num_batches = 0
-        for batch in val_loader:
-            batch = {k: v.to(device) if torch.is_tensor(v) else v for k, v in batch.items()}
-            outputs = model.forward(batch)
-            loss = model.compute_loss(outputs, batch)
-            eval_loss += loss.item()
-            num_batches += 1
-            # Save first batch for PDB output (or you can save all if desired)
-            if num_batches == 1 and output_dir is not None:
-                pdb_dir_epoch = f"{output_dir}/epoch_pdb"
-                seq_name_epoch = f'eval_sample_epoch{epoch+1}'
-                save_structure_output(outputs, batch, pdb_dir_epoch, seq_name_epoch, iteration=epoch)
-        eval_loss /= max(num_batches, 1)
-        print(f"Evaluation Loss: {eval_loss:.6f}")
-        scheduler.step(eval_loss)
-
-        # Save best model and PDB
-        if eval_loss < best_eval_loss:
-            best_eval_loss = eval_loss
-            if save_path:
-                torch.save({
-                    'epoch': epoch,
-                    'model_state_dict': model.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'train_loss': train_loss,
-                    'eval_loss': eval_loss,
-                }, save_path)
-                print(f"Saved best model with evaluation loss: {eval_loss:.6f}")
-            # Save PDB for best model
-            if output_dir is not None:
-                pdb_dir = f"{output_dir}/best_pdb"
-                seq_name = 'best_eval_sample'
-                save_structure_output(outputs, batch, pdb_dir, seq_name, iteration=epoch)
-
-        # Early stopping
-        if optimizer.param_groups[0]['lr'] < 1e-7:
-            print("Learning rate too small, stopping training")
-            break
-
-    print(f"\nTraining completed. Best evaluation loss: {best_eval_loss:.6f}")
-    if output_dir is not None:
-        print(f"Best model PDB saved to: {output_dir}/best_pdb")
-    return model
-
-
-# Example usage:
-if __name__ == "__main__":
-    # Example of how to use the training loop with Lightning checkpoint
-    
-    # Initialize model
-    # config = your_config_object
-    # model = StructureModel(config, training=True)
-    
-    # Load pretrained Lightning weights
-    # checkpoint_path = "epoch=15-step=21009.ckpt"
-    # model.load_pretrained_weights(checkpoint_path, strict=False)
-    
-    # Setup data loaders
-    # train_loader = your_train_dataloader
-    # val_loader = your_val_dataloader
-    
-    # Train the model (only SingleOptimizer parameters will be trained)
-    # trained_model = train_structure_model(
-    #     model=model,
-    #     train_loader=train_loader,
-    #     val_loader=val_loader,
-    #     num_epochs=100,
-    #     learning_rate=1e-4,
-    #     device='cuda',
-    #     save_path='best_structure_model.pth'
-    # )
-    
-    pass
