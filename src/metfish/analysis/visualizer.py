@@ -11,7 +11,8 @@ from typing import List, Dict, Optional
 class ProteinVisualization:
     """Visualization tools for protein structure comparison."""
     
-    def __init__(self, color_scheme: Dict[str, str], label_dict: Dict[str, str]):
+    def __init__(self, df: pd.DataFrame, color_scheme: Dict[str, str], label_dict: Dict[str, str]):
+        self.df = df
         self.color_scheme = color_scheme
         self.label_dict = label_dict
         
@@ -21,6 +22,10 @@ class ProteinVisualization:
             text = text.replace(k, v)
         return text
     
+    def plot_all(self):
+        self.plot_overall_metrics(self.df, ['AF', 'NMRtrain', 'NMAtrain'], ['rmsd', 'lddt'])
+
+
     def plot_overall_metrics(self,
                             comparison_df: pd.DataFrame,
                             models: List[str],

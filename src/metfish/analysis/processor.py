@@ -6,15 +6,11 @@ from biopandas.pdb import PandasPdb
 from typing import List, Dict, Tuple, Optional
 
 from metfish.utils import get_rmsd, get_lddt, save_aligned_pdb, get_Pr
-from metfish.analysis.model_config import ModelConfig
 
 
 class ProteinStructureAnalyzer:
     """Analyze and compare protein structures."""
-    
-    def __init__(self, model_config: ModelConfig):
-        self.model_config = model_config
-        
+
     def calculate_metrics(self, 
                          pdb_df_a: pd.DataFrame, 
                          pdb_df_b: pd.DataFrame,
@@ -77,12 +73,11 @@ class ModelComparisonProcessor:
     """Process and create comparison dataframes for multiple models."""
     
     def __init__(self, 
-                 model_config: ModelConfig,
-                 analyzer: ProteinStructureAnalyzer,
+                 model_dict: Dict[str, Dict],
                  data_dir: Path,
                  output_dir: Path):
-        self.model_config = model_config
-        self.analyzer = analyzer
+        self.model_configs = model_dict
+        self.analyzer =  ProteinStructureAnalyzer()
         self.data_dir = data_dir
         self.output_dir = output_dir
         
@@ -170,6 +165,7 @@ class ModelComparisonProcessor:
             # Save aligned structure
             comparison = f'{type_a}_vs_{type_b}'
             save_aligned_pdb(fname_a, fname_b, comparison)
+            # TOOO - check where these output files are going
             
             # Compile results
             return {
@@ -200,10 +196,24 @@ class ModelComparisonProcessor:
         name_a = name_alt if 'alt' in type_a else name
         name_b = name_alt if 'alt' in type_b else name
         
-        fname_ext_a = self.model_config.get_filename_ext(type_a)
-        fname_ext_b = self.model_config.get_filename_ext(type_b)
+        fname_ext_a = self.get_filename_ext(type_a)
+        fname_ext_b = self.get_filename_ext(type_b)
         
         fname_a = f"{dir_path_a}/{name_a}{fname_ext_a}"
         fname_b = f"{dir_path_b}/{name_b}{fname_ext_b}"
         
         return fname_a, fname_b
+    
+    def get_filename_ext(self, tag: str) -> str:
+        """Get filename extension based on model tag."""
+        tags_to_keys = {v['tags']: k for k, v in self.model_configs.items()}
+        
+        for k, v in tags_to_keys.items():
+            if f"out_{k}" == tag:
+                return f"_{self.model_configs[v]['model_name']}_{k}_unrelaxed.pdb"
+            elif k in tag:
+                return f"_{self.model_configs[v]['model_name']}_{k}_unrelaxed.pdb"
+            elif 'target' in tag:
+                return '.pdb'
+        
+        raise ValueError(f"Unknown tag: {tag}")
