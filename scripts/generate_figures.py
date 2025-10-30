@@ -1,4 +1,5 @@
 import argparse
+import pandas as pd
 
 from pathlib import Path
 from typing import Tuple
@@ -12,7 +13,8 @@ def main(
     ckpt_dir: Path,
     output_dir: Path,
     overwrite: bool = False,
-    models: Tuple[str] = ('AlphaFold', 'SFold_NMR', 'SFold_NMA')
+    skip_inference: bool = False,
+    models: Tuple[str] = ('AlphaFold', 'SFold_NMR', 'SFold_NMA'),
 ):
      # Setup configuration
     model_dict = {
@@ -57,10 +59,9 @@ def main(
         output_dir=output_dir
     )
     
-    comparison_df = processor.create_comparison_df(
-        pairs=[('apo1', 'holo1')],
-        names=['apo1', 'holo1'],
-        comparisons=[('out_AF', 'target'), ('out_NMRtrain', 'target')]
+    names = pd.read_csv(data_dir / 'input_all.csv')['name'].tolist()
+    comparison_df = processor.create_comparison_df(names=names,
+                                                   comparisons=processor.create_comparisons_list(),
     )
     
     # Visualize results
@@ -77,7 +78,8 @@ if __name__ == "__main__":
     parser.add_argument('--ckpt-dir', type=str, default=Path("/global/cfs/cdirs/m4704/100125_Nature_Com_data/single_conformation"), help='Checkpoint directory')
     parser.add_argument('--output-dir', type=str, default=Path("/global/cfs/cdirs/m4704/100125_Nature_Com_data/results"), help='Output directory')
     parser.add_argument('--overwrite', action='store_true', default=False, help='Overwrite existing files')
-    parser.add_argument('--models', type=str, nargs='+', default=['AlphaFold', 'SFold_NMR', 'SFold_NMA'], help='Models to run')
+    parser.add_argument('--skip-inference', action='store_true', default=False, help='Skip inference step')
+    parser.add_argument('--models', type=str, nargs='+', default=['SFold_NMR', 'SFold_NMA'], help='Models to run')
 
     args = parser.parse_args()
     
@@ -86,5 +88,6 @@ if __name__ == "__main__":
         ckpt_dir=Path(args.ckpt_dir),
         output_dir=Path(args.output_dir),
         overwrite=args.overwrite,
+        skip_inference=args.skip_inference,
         models=args.models
     )
