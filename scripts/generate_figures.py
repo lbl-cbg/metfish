@@ -37,19 +37,20 @@ def main(
     
     # TODO - replace old results archive with the new ones generated from that subset of 40 structures
     # Generate models
-    for model_key, model_kwargs in model_dict.items():
-        if model_key in models:
-            print(f'Running inference for {model_key}...')
-            inference(**model_kwargs, 
-                    data_dir=data_dir,
-                    output_dir=output_dir / model_kwargs['tags'],
-                    test_csv_name=data_dir / 'input_all.csv',
-                    overwrite=overwrite,
-                    deterministic=True,
-                    random_seed=1234,
-                    pdb_ext='.pdb',
-                    saxs_ext='_atom_only.csv',
-                    save_output_dict=False)
+    if not skip_inference:
+        for model_key, model_kwargs in model_dict.items():
+            if model_key in models:
+                print(f'Running inference for {model_key}...')
+                inference(**model_kwargs, 
+                        data_dir=data_dir,
+                        output_dir=output_dir / model_kwargs['tags'],
+                        test_csv_name=data_dir / 'input_all.csv',
+                        overwrite=overwrite,
+                        deterministic=True,
+                        random_seed=1234,
+                        pdb_ext='.pdb',
+                        saxs_ext='_atom_only.csv',
+                        save_output_dict=False)
 
 
     # Process comparisons
@@ -60,16 +61,14 @@ def main(
     )
     
     names = pd.read_csv(data_dir / 'input_all.csv')['name'].tolist()
-    comparison_df = processor.create_comparison_df(names=names,
-                                                   comparisons=processor.create_comparisons_list(),
-    )
+    comparison_df = processor.create_comparison_df(names=names)
     
     # Visualize results
     color_scheme = {"AF": "#56994A", "Target": "#5c5c5c", "SFold NMR": "#264882", "SFold NMA": "#b13c6c"}
     label_dict = {"out_AF": "AF", "out_NMR": "SFold NMR", "out_NMA": "SFold NMA", "target": "Target"}
     
-    viz = ProteinVisualization(comparison_df, color_scheme, label_dict)
-    viz.plot_overall_metrics(comparison_df, ['AF', 'NMRtrain', 'NMAtrain'], ['rmsd', 'lddt'])
+    viz = ProteinVisualization(comparison_df, color_scheme, label_dict, models)
+    viz.plot_all()
 
 
 if __name__ == "__main__":
@@ -78,7 +77,7 @@ if __name__ == "__main__":
     parser.add_argument('--ckpt-dir', type=str, default=Path("/global/cfs/cdirs/m4704/100125_Nature_Com_data/single_conformation"), help='Checkpoint directory')
     parser.add_argument('--output-dir', type=str, default=Path("/global/cfs/cdirs/m4704/100125_Nature_Com_data/results"), help='Output directory')
     parser.add_argument('--overwrite', action='store_true', default=False, help='Overwrite existing files')
-    parser.add_argument('--skip-inference', action='store_true', default=False, help='Skip inference step')
+    parser.add_argument('--skip-inference', action='store_true', default=True, help='Skip inference step')
     parser.add_argument('--models', type=str, nargs='+', default=['SFold_NMR', 'SFold_NMA'], help='Models to run')
 
     args = parser.parse_args()
