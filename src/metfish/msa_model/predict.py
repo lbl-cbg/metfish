@@ -66,7 +66,7 @@ def inference(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/re
     
     # initialize model
     print('Initializing model...')
-    if model_name == 'AFSAXS':
+    if model_name == 'SFold':
         model = MSASAXSModel(config, training=False)
     elif model_name == 'AlphaFold':
         model = AlphaFoldModel(config)  # wrapper for OpenFold AF
