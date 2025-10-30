@@ -1,5 +1,7 @@
 import pandas as pd
 import numpy as np
+import itertools
+
 from scipy.special import rel_entr
 from pathlib import Path
 from biopandas.pdb import PandasPdb
@@ -80,12 +82,31 @@ class ModelComparisonProcessor:
         self.analyzer =  ProteinStructureAnalyzer()
         self.data_dir = data_dir
         self.output_dir = output_dir
-        
+        self.apo_holo_pairs = self._get_apo_holo_pairs()
+
+    def _get_apo_holo_pairs(self) -> List[Tuple[str, str]]:
+        """Extract apo-holo structure pairs from metadata."""
+        apo_holo_csv_name = self.data_dir / "Table_rmsd_Apo_vs_Holo.csv"
+        if apo_holo_csv_name.exists():
+            metadata_df = pd.read_csv(apo_holo_csv_name)
+            return list(zip(metadata_df['Apo_ID'], metadata_df['Holo_ID']))
+            
+        return None
+    
+    def _create_comparisons_list(self) -> List[Tuple[str, str]]:
+        comparisons=[('out', 'target'), ('out', 'target_alt'), ('out', 'out_alt'), ('target', 'target_alt')],
+        tags = [m['tags'] for m in self.model_configs.values()]
+        all_comparisons = [
+            tuple(c.replace('out', f'out_{t}') for c in comp)
+            for comp in comparisons
+            if any('out' == x or 'out_alt' == x for x in comp)
+            for t in tags
+        ]
+        all_comparisons.extend([tuple(f'out_{x}' for x in comb) for comb in itertools.combinations(tags, 2)])
+        return all_comparisons
+
     def create_comparison_df(self,
-                            pairs: List[Tuple[str, str]],
-                            names: List[str],
-                            comparisons: List[Tuple[str, str]],
-                            metadata_df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+                            names: List[str]) -> pd.DataFrame:
         """
         Create comprehensive comparison dataframe.
         
@@ -98,54 +119,44 @@ class ModelComparisonProcessor:
         Returns:
             DataFrame with all comparison metrics
         """
+
+        comparisons = self.create_comparisons_list()
         data = []
-        
+
         for name in names:
             print(f'Generating comparison data for {name}...')
             
-            # Get alternative name from pairs
-            name_alt = self._get_alternative_name(name, pairs, names)
-            if name_alt is None:
+            # Get name of the other pair item
+            name_alt = self._get_pair_name(name, names)
+            if name_alt is None or name_alt not in names:
                 continue
                 
-            # Load metadata if available
-            rmsd_metadata = self._get_metadata(name, metadata_df) if metadata_df is not None else None
-            
             # Process all comparisons
             for (a, b) in comparisons:
                 comparison_data = self._process_single_comparison(
-                    name, name_alt, a, b, rmsd_metadata
+                    name, name_alt, a, b,
                 )
                 if comparison_data:
                     data.append(comparison_data)
         
         return pd.DataFrame(data)
     
-    def _get_alternative_name(self, 
-                             name: str, 
-                             pairs: List[Tuple[str, str]], 
-                             names: List[str]) -> Optional[str]:
+    def _get_pair_name(self, 
+                       name: str, 
+                       names: List[str]) -> Optional[str]:
         """Find alternative structure name from pairs."""
-        for p in pairs:
-            if p[0] == p[1]:
-                return name
-            elif name in p:
-                name_alt = (set(p) - {name}).pop()
-                if name_alt in names:
+        if self.apo_holo_pairs is not None:
+            for p in self.apo_holo_pairs:
+                if name in p:
+                    name_alt = (set(p) - {name}).pop()
                     return name_alt
-        return None
-    
-    def _get_metadata(self, name: str, metadata_df: pd.DataFrame) -> Optional[float]:
-        """Extract metadata for a given structure."""
-        result = metadata_df.query('apo_id == @name | holo_id == @name')['rmsd_apo_holo']
-        return result.values[0] if not result.empty else None
+        return name
     
     def _process_single_comparison(self,
                                    name: str,
                                    name_alt: str,
                                    type_a: str,
-                                   type_b: str,
-                                   rmsd_metadata: Optional[float]) -> Optional[Dict]:
+                                   type_b: str) -> Optional[Dict]:
         """Process a single structure comparison."""
         try:
             # Get file paths
@@ -176,7 +187,6 @@ class ModelComparisonProcessor:
                 'comparison': comparison,
                 'fname_a': fname_a,
                 'fname_b': fname_b,
-                'rmsd_apo_holo': rmsd_metadata,
                 **metrics
             }
             
@@ -210,9 +220,9 @@ class ModelComparisonProcessor:
         
         for k, v in tags_to_keys.items():
             if f"out_{k}" == tag:
-                return f"_{self.model_configs[v]['model_name']}_{k}_unrelaxed.pdb"
+                return f"_{self.model_configs[v]['model_name']}_{k}.pdb"
             elif k in tag:
-                return f"_{self.model_configs[v]['model_name']}_{k}_unrelaxed.pdb"
+                return f"_{self.model_configs[v]['model_name']}_{k}.pdb"
             elif 'target' in tag:
                 return '.pdb'
         
