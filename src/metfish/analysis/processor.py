@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import itertools
+import mdtraj as md
 
 from scipy.special import rel_entr
 from pathlib import Path
@@ -22,6 +23,7 @@ class ProteinStructureAnalyzer:
         """Calculate comparison metrics between two structures."""
         
         # Extract pLDDT values
+        # TODO - if we want to do pLDDT analysis, will need to convert bfactors from pdb
         plddt_res_num_a = pdb_df_a.drop_duplicates('residue_number')['residue_number'].to_numpy()
         plddt_res_num_b = pdb_df_b.drop_duplicates('residue_number')['residue_number'].to_numpy()
         plddt_a = pdb_df_a.drop_duplicates('residue_number')['b_factor'].to_numpy()
@@ -33,15 +35,27 @@ class ProteinStructureAnalyzer:
         
         # Calculate SAXS KL divergence
         saxs_kldiv = self._calculate_saxs_kldiv(p_of_r_a, p_of_r_b, r_a, r_b)
-        
+
+        # calculate radius of gyration
+        md_obj_a = md.load(fname_a)
+        md_obj_b = md.load(fname_b)
+        rg_a = md.compute_rg(md_obj_a)[0]
+        rg_b = md.compute_rg(md_obj_b)[0]
+
         # Calculate structural metrics
-        rmsd = get_rmsd(pdb_df_a, pdb_df_b, atom_types=['CA'])
+        #rmsd = get_rmsd(pdb_df_a, pdb_df_b, atom_types=['CA'])
+        rmsd = md.rmsd(target=md_obj_a,
+                              reference=md_obj_b,
+                              atom_indices=md_obj_a.topology.select('protein and name CA'),
+                              ref_atom_indices=md_obj_b.topology.select('protein and name CA'))[0] * 10.0 # convert to angstrom
         lddt = get_lddt(pdb_df_a, pdb_df_b, atom_types=['CA'])
         
         return {
             'rmsd': rmsd,
             'lddt': lddt,
             'saxs_kldiv': saxs_kldiv,
+            'rg_a': rg_a,
+            'rg_b': rg_b,
             'plddt_a': plddt_a,
             'plddt_bins_a': plddt_res_num_a,
             'plddt_b': plddt_b,
@@ -78,31 +92,35 @@ class ModelComparisonProcessor:
                  model_dict: Dict[str, Dict],
                  data_dir: Path,
                  output_dir: Path):
-        self.model_configs = model_dict
-        self.analyzer =  ProteinStructureAnalyzer()
+        
         self.data_dir = data_dir
         self.output_dir = output_dir
+        self.aligned_cache_dir = self.output_dir / 'aligned_structures_cache'
+        self.aligned_cache_dir.mkdir(parents=True, exist_ok=True)
+
+        self.model_configs = model_dict
+        self.tags = {v['tags']: k for k, v in self.model_configs.items()}
+        self.analyzer =  ProteinStructureAnalyzer()
         self.apo_holo_pairs = self._get_apo_holo_pairs()
 
     def _get_apo_holo_pairs(self) -> List[Tuple[str, str]]:
         """Extract apo-holo structure pairs from metadata."""
         apo_holo_csv_name = self.data_dir / "Table_rmsd_Apo_vs_Holo.csv"
         if apo_holo_csv_name.exists():
-            metadata_df = pd.read_csv(apo_holo_csv_name)
+            metadata_df = pd.read_csv(apo_holo_csv_name, delimiter=';')
             return list(zip(metadata_df['Apo_ID'], metadata_df['Holo_ID']))
             
         return None
     
     def _create_comparisons_list(self) -> List[Tuple[str, str]]:
-        comparisons=[('out', 'target'), ('out', 'target_alt'), ('out', 'out_alt'), ('target', 'target_alt')],
-        tags = [m['tags'] for m in self.model_configs.values()]
+        comparisons=[('out', 'target'), ('out', 'out_alt'), ('target', 'target_alt')]
         all_comparisons = [
             tuple(c.replace('out', f'out_{t}') for c in comp)
             for comp in comparisons
             if any('out' == x or 'out_alt' == x for x in comp)
-            for t in tags
+            for t in self.tags
         ]
-        all_comparisons.extend([tuple(f'out_{x}' for x in comb) for comb in itertools.combinations(tags, 2)])
+        all_comparisons.extend([tuple(f'out_{x}' for x in comb) for comb in itertools.combinations(self.tags, 2)])
         return all_comparisons
 
     def create_comparison_df(self,
@@ -120,7 +138,7 @@ class ModelComparisonProcessor:
             DataFrame with all comparison metrics
         """
 
-        comparisons = self.create_comparisons_list()
+        comparisons = self._create_comparisons_list()
         data = []
 
         for name in names:
@@ -175,8 +193,7 @@ class ModelComparisonProcessor:
             
             # Save aligned structure
             comparison = f'{type_a}_vs_{type_b}'
-            save_aligned_pdb(fname_a, fname_b, comparison)
-            # TOOO - check where these output files are going
+            save_aligned_pdb(fname_a, fname_b, comparison, self.aligned_cache_dir)
             
             # Compile results
             return {
@@ -200,8 +217,11 @@ class ModelComparisonProcessor:
                              type_a: str,
                              type_b: str) -> Tuple[str, str]:
         """Get file paths for comparison structures."""
-        dir_path_a = f'{self.data_dir}/pdbs' if 'target' in type_a else self.output_dir
-        dir_path_b = f'{self.data_dir}/pdbs' if 'target' in type_b else self.output_dir
+        tags_a = next((t for t in self.tags.keys() if t in type_a), '')
+        tags_b = next((t for t in self.tags.keys() if t in type_b), '')
+
+        dir_path_a = f'{self.data_dir}/pdbs' if 'target' in type_a else f'{self.output_dir}/{tags_a}/'
+        dir_path_b = f'{self.data_dir}/pdbs' if 'target' in type_b else f'{self.output_dir}/{tags_b}/'
         
         name_a = name_alt if 'alt' in type_a else name
         name_b = name_alt if 'alt' in type_b else name
@@ -215,15 +235,9 @@ class ModelComparisonProcessor:
         return fname_a, fname_b
     
     def get_filename_ext(self, tag: str) -> str:
-        """Get filename extension based on model tag."""
-        tags_to_keys = {v['tags']: k for k, v in self.model_configs.items()}
-        
-        for k, v in tags_to_keys.items():
-            if f"out_{k}" == tag:
-                return f"_{self.model_configs[v]['model_name']}_{k}.pdb"
-            elif k in tag:
+        """Get filename extension based on model tag."""        
+        for k, v in self.tags.items():
+            if f"out_{k}" == tag or k in tag:
                 return f"_{self.model_configs[v]['model_name']}_{k}.pdb"
             elif 'target' in tag:
                 return '.pdb'
-        
-        raise ValueError(f"Unknown tag: {tag}")

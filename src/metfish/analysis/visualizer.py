@@ -11,10 +11,11 @@ from typing import List, Dict, Optional
 class ProteinVisualization:
     """Visualization tools for protein structure comparison."""
     
-    def __init__(self, df: pd.DataFrame, color_scheme: Dict[str, str], label_dict: Dict[str, str]):
+    def __init__(self, df: pd.DataFrame, color_scheme: Dict[str, str], label_dict: Dict[str, str], models: List[str]):
         self.df = df
         self.color_scheme = color_scheme
         self.label_dict = label_dict
+        self.models = models
         
     def map_labels(self, text: str) -> str:
         """Map internal labels to display labels."""
@@ -23,7 +24,7 @@ class ProteinVisualization:
         return text
     
     def plot_all(self):
-        self.plot_overall_metrics(self.df, ['AF', 'NMRtrain', 'NMAtrain'], ['rmsd', 'lddt'])
+        self.plot_overall_metrics(self.df, self.models, ['rmsd', 'lddt'])
 
 
     def plot_overall_metrics(self,
