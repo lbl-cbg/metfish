@@ -86,7 +86,7 @@ def inference(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/re
     # run inference
     with torch.no_grad():
         for i, item in enumerate(dataset):
-            if not overwrite and os.path.exists(f'{output_dir}/{dataset.get_name(i)}_{model_name}{tags}_unrelaxed.pdb'):
+            if not overwrite and os.path.exists(f'{output_dir}/{dataset.get_name(i)}_{model_name}{tags}.pdb'):
                 print(f"Skipping {dataset.get_name(i)} as output already exists.")
                 continue
 
@@ -104,7 +104,7 @@ def inference(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/re
 
             # save unrelaxed protein as pdb file
             unrelaxed_protein = output_to_protein({**out, **batch})
-            with open(f'{output_dir}/{dataset.get_name(i)}_{model_name}{tags}_unrelaxed.pdb', 'w') as f:
+            with open(f'{output_dir}/{dataset.get_name(i)}_{model_name}{tags}.pdb', 'w') as f:
                 f.write(protein.to_pdb(unrelaxed_protein))
 
             # save output dictionary
