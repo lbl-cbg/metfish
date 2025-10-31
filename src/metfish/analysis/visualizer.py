@@ -272,13 +272,11 @@ class ProteinVisualization:
                                      image_dpi: int = 150) -> plt.Figure:
         """
         Create a comprehensive PyMOL-based visualization with protein structures and SAXS curves.
+
+        TODO - need to test this function
         """
         # Define structure types to display
-        structure_types = ['out_AF', 'out_NMRtrain', 'out_NMAtrain', 'target']
-        structure_labels = [self.map_labels(st) for st in structure_types]
-        
-        # Get data for this protein
-        comparisons = [f"{st}_vs_target" for st in structure_types if st != 'target']
+        model_names = [m.replace('SFold_', '') for m in self.models]
         data = self.df.query('name == @name').copy()
         
         # Prepare data structure
@@ -292,7 +290,7 @@ class ProteinVisualization:
         
         # Collect structure files and SAXS data for each type
         structure_data = {}
-        for st in structure_types:
+        for st in model_names:
             # Find rows where type_a or type_b matches this structure type
             mask_a = data['type_a'] == st
             mask_b = data['type_b'] == st
@@ -316,7 +314,7 @@ class ProteinVisualization:
         
         # Also get alternative structures
         structure_data_alt = {}
-        for st in structure_types:
+        for st in model_names:
             st_alt = f"{st}_alt"
             mask_a = data['type_a'] == st_alt
             mask_b = data['type_b'] == st_alt
@@ -341,47 +339,29 @@ class ProteinVisualization:
         # Row 1: Protein A structures
         for col_idx, st in enumerate(structure_types):
             ax = fig.add_subplot(gs[0, col_idx])
-            if st in structure_data:
-                img = self._render_pymol_structure(
-                    structure_data[st]['fname'],
-                    structure_data[st]['label'],
-                    dpi=image_dpi
-                )
-                if img is not None:
-                    ax.imshow(img)
-                    ax.set_title(f"{structure_data[st]['label']}\n(Protein A)", 
-                               fontsize=10, fontweight='bold')
-                else:
-                    ax.text(0.5, 0.5, 'Structure\nNot Available', 
-                           ha='center', va='center', transform=ax.transAxes)
-                    ax.set_title(f"{self.map_labels(st)}\n(Protein A)", fontsize=10)
-            else:
-                ax.text(0.5, 0.5, 'No Data', ha='center', va='center', 
-                       transform=ax.transAxes)
-                ax.set_title(f"{self.map_labels(st)}\n(Protein A)", fontsize=10)
+            img = self._render_pymol_structure(
+                structure_data[st]['fname'],
+                structure_data[st]['label'],
+                dpi=image_dpi
+            )
+            ax.imshow(img)
+            ax.set_title(f"{structure_data[st]['label']}\n(Protein A)", 
+                        fontsize=10, fontweight='bold')
+            ax.set_title(f"{self.map_labels(st)}\n(Protein A)", fontsize=10)
             ax.axis('off')
         
         # Row 2: Protein B (alternative) structures
         for col_idx, st in enumerate(structure_types):
             ax = fig.add_subplot(gs[1, col_idx])
-            if st in structure_data_alt:
-                img = self._render_pymol_structure(
-                    structure_data_alt[st]['fname'],
-                    structure_data_alt[st]['label'],
-                    dpi=image_dpi
-                )
-                if img is not None:
-                    ax.imshow(img)
-                    ax.set_title(f"{structure_data_alt[st]['label']}\n(Protein B)", 
-                               fontsize=10, fontweight='bold')
-                else:
-                    ax.text(0.5, 0.5, 'Structure\nNot Available', 
-                           ha='center', va='center', transform=ax.transAxes)
-                    ax.set_title(f"{self.map_labels(st)} alt\n(Protein B)", fontsize=10)
-            else:
-                ax.text(0.5, 0.5, 'No Data', ha='center', va='center', 
-                       transform=ax.transAxes)
-                ax.set_title(f"{self.map_labels(st)} alt\n(Protein B)", fontsize=10)
+            img = self._render_pymol_structure(
+                structure_data_alt[st]['fname'],
+                structure_data_alt[st]['label'],
+                dpi=image_dpi
+            )
+            ax.imshow(img)
+            ax.set_title(f"{structure_data_alt[st]['label']}\n(Protein B)", 
+                        fontsize=10, fontweight='bold')
+            ax.set_title(f"{self.map_labels(st)} alt\n(Protein B)", fontsize=10)
             ax.axis('off')
         
         # Row 3: SAXS curves comparing A and B for each model
@@ -440,9 +420,7 @@ class ProteinVisualization:
             
         # Get color for this structure type
         hex_color = self.color_scheme.get(label, '#2b2b2b')
-        # Convert hex to RGB (0-1 range for PyMOL)
-        hex_color = hex_color.lstrip('#')
-        r, g, b = tuple(int(hex_color[i:i+2], 16) / 255.0 for i in (0, 2, 4))
+        r, g, b = tuple(int(hex_color.lstrip('#')[i:i+2], 16) / 255.0 for i in (0, 2, 4))
         
         # Create temporary file for the image
         with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_file:
