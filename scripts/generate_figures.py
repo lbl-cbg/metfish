@@ -61,13 +61,12 @@ def main(
     )
     
     names = pd.read_csv(data_dir / 'input_all.csv')['name'].tolist()
-    comparison_df = processor.create_comparison_df(names=names)
-    
+    comparison_df = processor.get_comparison_df(names=names)
+
     # Visualize results
-    color_scheme = {"AF": "#56994A", "Target": "#5c5c5c", "SFold NMR": "#264882", "SFold NMA": "#b13c6c"}
-    label_dict = {"out_AF": "AF", "out_NMR": "SFold NMR", "out_NMA": "SFold NMA", "target": "Target"}
+    color_scheme = {"NMR": "#264882", "NMA": "#b13c6c", "AF": "#56994A", "Target": "#5c5c5c", }
     
-    viz = ProteinVisualization(comparison_df, color_scheme, label_dict, models)
+    viz = ProteinVisualization(comparison_df, color_scheme)
     viz.plot_all()
 
 
