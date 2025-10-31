@@ -195,7 +195,7 @@ class ProteinVisualization:
             
             # Plot each protein
             for idx, name in enumerate(protein_names):
-                axes[idx] = self._plot_protein_summary_compact(name, axes[idx])
+                self._plot_protein_saxs_summary(name, axes[idx])
 
             fig.suptitle(f'Protein Summary Grid - {page_num + 1}/{n_pages} ')
 
@@ -209,7 +209,7 @@ class ProteinVisualization:
         for name in self.df['name'].unique():
             self.plot_protein_structures(name, save_path=f'protein_{name}_structures.pdf')
 
-    def _plot_protein_summary_compact(self, name: str, ax: plt.Axes):
+    def _plot_protein_saxs_summary(self, name: str, ax: plt.Axes):
         """
         Create a compact visualization for a single protein in a subplot.
         Shows SAXS curves with RMSD values as text annotations.
@@ -263,94 +263,8 @@ class ProteinVisualization:
         ax.set_xlabel('r (Å)', fontsize=8)
         ax.set_ylabel('P(r)', fontsize=8)
         ax.set_title(name, fontsize=9, fontweight='bold')
-
-        return ax
-    
-    # def plot_protein_summary(self,
-    #                         name: str,
-    #                         save_path: Path,
-    #                         figsize: tuple = (15, 6)) -> plt.Figure:
-    #     """
-    #     Create a comprehensive visualization for a single protein showing SAXS data
-    #     with Rg annotations and an RMSD comparison table.
-    #     """
-    #     # Filter data for the specified protein and comparisons
-    #     labels = [m.replace('SFold_', '') for m in self.models]
-    #     comparisons = [f"out_{label}_vs_target" for label in labels]
-
-    #     comparison_labels = [self.map_labels(c) for c in comparisons]    
-    #     data = self.df.query('comparison in @comparisons & name == @name').copy()
-
-    #     # Prepare data for plotting
-    #     for col in ['type_a', 'type_b', 'comparison']:
-    #         data[f'labels_{col}'] = data[col].apply(self.map_labels)
-
-    #     subset_df = (pd.concat([
-    #         data[['labels_type_a', 'saxs_bins_a', 'saxs_a', 'rg_a', 'fname_a']].rename(
-    #             columns=lambda x: x.rstrip('_a')),
-    #         data[['labels_type_b', 'saxs_bins_b', 'saxs_b', 'rg_b', 'fname_b']].rename(
-    #             columns=lambda x: x.rstrip('_b'))
-    #     ]).drop_duplicates('labels_type'))
-    #     saxs_data = subset_df[['labels_type', 'saxs_bins', 'saxs', 'rg']].explode(
-    #         ['saxs_bins', 'saxs'])
+        sns.despine(ax=ax)
         
-    #     # Get color palettes
-    #     palette = self.get_palette(comparison_labels)
-        
-    #     # Create figure 
-    #     fig, ax = plt.subplots(1, 2, figsize=figsize, width_ratios=[3, 1])
-        
-    #     # Plot SAXS data (left panel)
-    #     sns.lineplot(data=saxs_data, x='saxs_bins', y='saxs',
-    #                 hue='labels_type', hue_order=[*labels, "target"], 
-    #                 palette=[*palette, self.get_palette(["Target"])[0]], ax=ax[0], linewidth=2)
-        
-    #     ax[0].set(title='SAXS data', xlabel='r', ylabel='P(r)')
-            
-    #     # Prepare RMSD data for table
-    #     ax[1].axis('off')
-    #     rmsd_data = data[['labels_comparison', 'rmsd']].drop_duplicates()
-    #     rmsd_data = rmsd_data.sort_values('labels_comparison')
-    #     table_data = []
-    #     for _, row in rmsd_data.iterrows():
-    #         table_data.append([row['labels_comparison'], f"{row['rmsd']:.3f}"])
-        
-    #     # Add table
-    #     if table_data:
-    #         table = ax[1].table(cellText=table_data,
-    #                           colLabels=['Comparison', 'RMSD (Å)'],
-    #                           cellLoc='left',
-    #                           loc='center',
-    #                           colWidths=[0.7, 0.3])
-            
-    #         table.auto_set_font_size(False)
-    #         table.set_fontsize(9)
-    #         table.scale(1, 2)
-            
-    #         # Style header
-    #         for i in range(2):
-    #             table[(0, i)].set_facecolor('#E0E0E0')
-    #             table[(0, i)].set_text_props(weight='bold')
-            
-    #         # Color code rows by comparison
-    #         for i, (_, row) in enumerate(rmsd_data.iterrows(), start=1):
-    #             comparison = row['labels_comparison']
-    #             table[(i, 0)].set_facecolor(self.get_palette([comparison])[0])
-    #             table[(i, 0)].set_alpha(0.3)
-        
-    #     ax[1].set_title('RMSD data', fontsize=12, pad=20)
-        
-    #     # Set figure title
-    #     fig.suptitle(name, fontsize=20)
-    #     fig.tight_layout()
-    #     sns.despine()
-        
-    #     # Save if path provided
-    #     save_path = self.output_dir / save_path if self.output_dir is not None else save_path
-    #     plt.savefig(save_path, format='pdf', dpi=300, transparent=True)
-        
-    #     return fig
-    
     def plot_protein_structures(self,
                                      name: str,
                                      save_path: Optional[Path] = None,

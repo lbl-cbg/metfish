@@ -182,11 +182,6 @@ class ModelComparisonProcessor:
         
         return pd.DataFrame(data)
     
-    def save_comparison_df(self, filename: str):
-        """Save comparison dataframe to CSV."""
-        df = self.get_comparison_df()
-        df.to_csv(self.output_dir / filename, index=False)
-    
     def _get_pair_name(self, 
                        name: str, 
                        names: List[str]) -> Optional[str]:
