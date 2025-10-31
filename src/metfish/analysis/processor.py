@@ -91,12 +91,15 @@ class ModelComparisonProcessor:
     def __init__(self, 
                  model_dict: Dict[str, Dict],
                  data_dir: Path,
-                 output_dir: Path):
+                 output_dir: Path,
+                 comparison_df_path: Optional[Path] = None):
         
         self.data_dir = data_dir
         self.output_dir = output_dir
         self.aligned_cache_dir = self.output_dir / 'aligned_structures_cache'
         self.aligned_cache_dir.mkdir(parents=True, exist_ok=True)
+        self.comparison_df_path = comparison_df_path or (self.output_dir / 'model_comparisons.csv')
+        self._comparison_df = None
 
         self.model_configs = model_dict
         self.tags = {v['tags']: k for k, v in self.model_configs.items()}
@@ -123,8 +126,9 @@ class ModelComparisonProcessor:
         all_comparisons.extend([tuple(f'out_{x}' for x in comb) for comb in itertools.combinations(self.tags, 2)])
         return all_comparisons
 
-    def create_comparison_df(self,
-                            names: List[str]) -> pd.DataFrame:
+    def get_comparison_df(self,
+                          names: List[str] = None,
+                          overwrite: bool = False) -> pd.DataFrame:
         """
         Create comprehensive comparison dataframe.
         
@@ -137,7 +141,24 @@ class ModelComparisonProcessor:
         Returns:
             DataFrame with all comparison metrics
         """
+        if self._comparison_df is not None and not overwrite:
+            return self._comparison_df
 
+        # Try to load from cache
+        if not overwrite and self.comparison_df_path.exists():
+            print(f"Loading cached comparison dataframe from {self.comparison_df_path}")
+            self._comparison_df = pd.read_csv(self.comparison_df_path)
+            if self._comparison_df is not None:
+                return self._comparison_df
+        
+        # default to recreating comparison
+        self._comparison_df = self._create_comparison_df(names)
+        self._comparison_df.to_csv(self.comparison_df_path, index=False)
+
+        return self._comparison_df
+
+    def _create_comparison_df(self, names: List[str]) -> pd.DataFrame:
+        """Create comparison dataframe from scratch."""
         comparisons = self._create_comparisons_list()
         data = []
 
@@ -158,6 +179,11 @@ class ModelComparisonProcessor:
                     data.append(comparison_data)
         
         return pd.DataFrame(data)
+    
+    def save_comparison_df(self, filename: str):
+        """Save comparison dataframe to CSV."""
+        df = self.get_comparison_df()
+        df.to_csv(self.output_dir / filename, index=False)
     
     def _get_pair_name(self, 
                        name: str, 
