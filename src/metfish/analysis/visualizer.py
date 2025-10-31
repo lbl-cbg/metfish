@@ -11,30 +11,35 @@ from typing import List, Dict, Optional
 class ProteinVisualization:
     """Visualization tools for protein structure comparison."""
     
-    def __init__(self, df: pd.DataFrame, color_scheme: Dict[str, str], label_dict: Dict[str, str], models: List[str]):
+    def __init__(self, df: pd.DataFrame, color_scheme: Dict[str, str]):
         self.df = df
         self.color_scheme = color_scheme
-        self.label_dict = label_dict
-        self.models = models
+        self.models = ['AF', 'NMR', 'NMA']
         
     def map_labels(self, text: str) -> str:
         """Map internal labels to display labels."""
-        for k, v in self.label_dict.items():
-            text = text.replace(k, v)
-        return text
+        return text.replace('_vs_', ' vs. ').replace('_', ' ').replace('out ', '')
+    
+    def get_palette(self, labels: List[str]) -> str:
+        """Select color based on label."""
+        palette = []
+        for label in labels:
+            color = next((v for k, v in self.color_scheme.items() if k in label))
+            palette.append(color)
+
+        return palette
     
     def plot_all(self):
-        self.plot_overall_metrics(self.df, self.models, ['rmsd', 'lddt'])
-
+        self.plot_overall_metrics(self.df, ['rmsd', 'lddt', 'saxs_kldiv'], 'overall_metrics.pdf')
+        self.plot_model_improvement(self.df, save_path='model_improvement.pdf')
 
     def plot_overall_metrics(self,
                             comparison_df: pd.DataFrame,
-                            models: List[str],
                             metrics: List[str],
                             save_path: Optional[Path] = None):
         """Create overall model performance comparison plots."""
         # Prepare data
-        comparisons = [f"out_{m}_vs_target" for m in models]
+        comparisons = [f"out_{m.replace('SFold_', '')}_vs_target" for m in self.models]
         comparison_labels = [self.map_labels(c) for c in comparisons]
         
         group_df = (comparison_df[['name', 'comparison', *metrics]]
@@ -65,7 +70,8 @@ class ProteinVisualization:
                        x='labels_comparison', 
                        y='value', 
                        order=comparison_labels, 
-                       palette=[self.color_scheme[c] for c in comparison_labels],
+                       hue='labels_comparison',
+                       palette=self.get_palette(comparison_labels),
                        showfliers=False, width=0.25, boxprops=dict(alpha=.5))
             
             # Individual points
@@ -101,8 +107,6 @@ class ProteinVisualization:
     
     def plot_model_improvement(self,
                               comparison_df: pd.DataFrame,
-                              base_model: str,
-                              comparison_models: List[str],
                               metrics: List[str] = ['rmsd', 'saxs_kldiv'],
                               save_path: Optional[Path] = None):
         """Plot improvement of models compared to baseline."""
@@ -112,24 +116,22 @@ class ProteinVisualization:
         
         for i, (ax, metric) in enumerate(zip(axes, metrics)):
             # Pivot data for comparison
-            metric_df = self._prepare_improvement_data(
-                comparison_df, base_model, comparison_models, metric
-            )
+            metric_df = self._prepare_improvement_data(comparison_df, metric)
             
             # Scatter plot
-            for model in comparison_models:
+            for model in ['NMR', 'NMA']:
                 col_name = self.map_labels(f'out_{model}_vs_target')
                 sns.scatterplot(data=metric_df,
-                               x=f'{base_model} vs. Target',
+                               x='AF vs. target',
                                y=col_name,
                                ax=ax,
-                               color=self.color_scheme[col_name],
-                               label=col_name.split(" vs. Target")[0])
+                               color=self.get_palette([col_name])[0],
+                               label=col_name.split(" vs. target")[0])
             
             # Identity line
             identity_line = [ax.get_xlim()[0], ax.get_xlim()[-1]]
             ax.plot(identity_line, identity_line, '--k', alpha=0.75, zorder=0)
-            ax.set(title=metric, xlabel=f'{base_model} vs. Target', ylabel='Model vs. Target')
+            ax.set(title=metric, xlabel='AF vs. target', ylabel='Model vs. target')
             
             # Add arrow annotation
             ax.annotate('', xy=(0.5, 0.25), xytext=(0.7, 0.25),
@@ -138,7 +140,7 @@ class ProteinVisualization:
             ax.annotate('better prediction', xy=(0.75, 0.25),
                        xycoords='axes fraction', ha='left', va='center', fontsize=9)
         
-        plt.suptitle(f'Model Performance vs. {base_model}')
+        plt.suptitle('Model Performance vs. AlphaFold')
         plt.tight_layout()
         
         if save_path:
@@ -148,22 +150,17 @@ class ProteinVisualization:
     
     def _prepare_improvement_data(self,
                                  comparison_df: pd.DataFrame,
-                                 base_model: str,
-                                 comparison_models: List[str],
                                  metric: str) -> pd.DataFrame:
         """Prepare data for improvement visualization."""
-        comparisons = [f"out_{m}_vs_target" for m in [base_model] + comparison_models]
-        comparison_labels = [self.map_labels(c) for c in comparisons]
+        comparisons = [f"out_{m}_vs_target" for m in self.models]
         
         group_df = (comparison_df[['name', 'comparison', metric]]
                    .query(f'comparison in {comparisons}')
-                   .assign(labels_comparison=lambda x: x['comparison'].apply(self.map_labels)))
+                   .assign(labels_comparison=lambda x: x['comparison'].apply(self.map_labels))
+                   .pivot(columns='labels_comparison', index='name', values=metric)
+                   .reset_index())
         
-        metric_df = (group_df
-                    .pivot(columns='labels_comparison', index='name', values=metric)
-                    .reset_index())
-        
-        return metric_df
+        return group_df
     
     def create_structure_viewer(self,
                                fname_a: str,
