@@ -41,13 +41,14 @@ class ProteinStructureAnalyzer:
         md_obj_b = md.load(fname_b)
         rg_a = md.compute_rg(md_obj_a)[0]
         rg_b = md.compute_rg(md_obj_b)[0]
+        rg_diff = rg_a - rg_b
 
         # Calculate structural metrics
         #rmsd = get_rmsd(pdb_df_a, pdb_df_b, atom_types=['CA'])
         rmsd = md.rmsd(target=md_obj_a,
-                              reference=md_obj_b,
-                              atom_indices=md_obj_a.topology.select('protein and name CA'),
-                              ref_atom_indices=md_obj_b.topology.select('protein and name CA'))[0] * 10.0 # convert to angstrom
+                       reference=md_obj_b,
+                       atom_indices=md_obj_a.topology.select('protein and name CA'),
+                       ref_atom_indices=md_obj_b.topology.select('protein and name CA'))[0] * 10.0 # convert to angstrom
         lddt = get_lddt(pdb_df_a, pdb_df_b, atom_types=['CA'])
         
         return {
@@ -56,6 +57,7 @@ class ProteinStructureAnalyzer:
             'saxs_kldiv': saxs_kldiv,
             'rg_a': rg_a,
             'rg_b': rg_b,
+            'rg_diff': rg_diff,
             'plddt_a': plddt_a,
             'plddt_bins_a': plddt_res_num_a,
             'plddt_b': plddt_b,

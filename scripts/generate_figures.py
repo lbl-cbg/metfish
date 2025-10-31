@@ -26,7 +26,7 @@ def main(
         'SFold_NMR': {
             'model_name': 'SFold',
             'tags': 'NMR',
-            'ckpt_path': ckpt_dir / 'nmr' / 'checkpoints' / 'epoch=17-step=24282.ckpt',
+            'ckpt_path': ckpt_dir / 'nmr' / 'checkpoints' / 'epoch=15-step=21009.ckpt',
         },
         'SFold_NMA': {
             'model_name': 'SFold',
@@ -61,12 +61,12 @@ def main(
     )
     
     names = pd.read_csv(data_dir / 'input_all.csv')['name'].tolist()
-    comparison_df = processor.get_comparison_df(names=names)
+    comparison_df = processor.get_comparison_df(names=names, overwrite=True)
 
     # Visualize results
     color_scheme = {"NMR": "#264882", "NMA": "#b13c6c", "AF": "#56994A", "Target": "#5c5c5c", }
     
-    viz = ProteinVisualization(comparison_df, color_scheme)
+    viz = ProteinVisualization(comparison_df, color_scheme, output_dir=output_dir / 'figures')
     viz.plot_all()
 
 
@@ -77,7 +77,7 @@ if __name__ == "__main__":
     parser.add_argument('--output-dir', type=str, default=Path("/global/cfs/cdirs/m4704/100125_Nature_Com_data/results"), help='Output directory')
     parser.add_argument('--overwrite', action='store_true', default=False, help='Overwrite existing files')
     parser.add_argument('--skip-inference', action='store_true', default=True, help='Skip inference step')
-    parser.add_argument('--models', type=str, nargs='+', default=['SFold_NMR', 'SFold_NMA'], help='Models to run')
+    parser.add_argument('--models', type=str, nargs='+', default=['AlphaFold', 'SFold_NMR', 'SFold_NMA'], help='Models to run')
 
     args = parser.parse_args()
     

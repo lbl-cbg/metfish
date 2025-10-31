@@ -11,10 +11,15 @@ from typing import List, Dict, Optional
 class ProteinVisualization:
     """Visualization tools for protein structure comparison."""
     
-    def __init__(self, df: pd.DataFrame, color_scheme: Dict[str, str]):
+    def __init__(self, df: pd.DataFrame, color_scheme: Dict[str, str], output_dir: Optional[Path] = None):
         self.df = df
         self.color_scheme = color_scheme
         self.models = ['AF', 'NMR', 'NMA']
+        self.output_dir = output_dir
+        
+        # Create output directory if specified
+        if self.output_dir is not None:
+            self.output_dir.mkdir(parents=True, exist_ok=True)
         
     def map_labels(self, text: str) -> str:
         """Map internal labels to display labels."""
@@ -31,12 +36,12 @@ class ProteinVisualization:
     
     def plot_all(self):
         self.plot_overall_metrics(self.df, ['rmsd', 'lddt', 'saxs_kldiv'], 'overall_metrics.pdf')
-        self.plot_model_improvement(self.df, save_path='model_improvement.pdf')
+        self.plot_model_improvement(self.df, 'model_improvement.pdf')
 
     def plot_overall_metrics(self,
                             comparison_df: pd.DataFrame,
                             metrics: List[str],
-                            save_path: Optional[Path] = None):
+                            save_path: Path):
         """Create overall model performance comparison plots."""
         # Prepare data
         comparisons = [f"out_{m.replace('SFold_', '')}_vs_target" for m in self.models]
@@ -100,15 +105,17 @@ class ProteinVisualization:
         plt.suptitle("Model Performance Comparison")
         plt.tight_layout()
         
-        if save_path:
-            plt.savefig(save_path, dpi=300)
+        
+        save_path = self.output_dir / save_path if self.output_dir is not None else save_path
+        plt.savefig(save_path, dpi=300)
         
         return fig, stats_df
     
     def plot_model_improvement(self,
                               comparison_df: pd.DataFrame,
-                              metrics: List[str] = ['rmsd', 'saxs_kldiv'],
-                              save_path: Optional[Path] = None):
+                              save_path: Path,
+                              metrics: List[str] = ['rmsd', 'saxs_kldiv', 'rg_diff'],
+                              ):
         """Plot improvement of models compared to baseline."""
         fig, axes = plt.subplots(1, len(metrics), figsize=(10, 5))
         if len(metrics) == 1:
@@ -143,8 +150,8 @@ class ProteinVisualization:
         plt.suptitle('Model Performance vs. AlphaFold')
         plt.tight_layout()
         
-        if save_path:
-            plt.savefig(save_path, dpi=300)
+        save_path = self.output_dir / save_path if self.output_dir is not None else save_path
+        plt.savefig(save_path, dpi=300)
         
         return fig
     
