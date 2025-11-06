@@ -16,6 +16,7 @@ Output Structure:
 import argparse
 import os
 import torch
+import csv
 from pathlib import Path
 from torch.utils.data import DataLoader
 
@@ -100,6 +101,8 @@ def optimize_single_sequence(model, batch, target_saxs, seq_name,
     
     # Track optimization progress
     loss_history = []
+    saved_pdb_paths = []    # Track paths of saved PDB files
+    saved_structure_losses = []  # Track losses when structures were saved
     best_loss = float('inf')
     best_iteration = 0
     
@@ -132,6 +135,9 @@ def optimize_single_sequence(model, batch, target_saxs, seq_name,
                 best_structure_dir = f"{output_dir}/best"
                 pdb_path = save_structure_output(outputs, batch, best_structure_dir, 
                                                seq_name, iteration)
+                # Track this saved structure
+                saved_pdb_paths.append(pdb_path)
+                saved_structure_losses.append(loss_value)
                 # Save best model parameters
                 torch.save({
                     'iteration': iteration,
@@ -154,12 +160,17 @@ def optimize_single_sequence(model, batch, target_saxs, seq_name,
             if save_all_structures:
                 # Save ALL structures in intermediate folder
                 intermediate_dir = f"{output_dir}/intermediate"
-                save_structure_output(outputs, batch, intermediate_dir, seq_name, iteration)
+                pdb_path = save_structure_output(outputs, batch, intermediate_dir, seq_name, iteration)
+                # Track this saved structure
+                saved_pdb_paths.append(pdb_path)
+                saved_structure_losses.append(loss_value)
             elif save_frequency > 0 and iteration % save_frequency == 0:
                 # Save structures at specific intervals only
                 intermediate_dir = f"{output_dir}/intermediate"
-                save_structure_output(outputs, batch, intermediate_dir, seq_name, iteration)
-        
+                pdb_path = save_structure_output(outputs, batch, intermediate_dir, seq_name, iteration)
+                # Track this saved structure
+                saved_pdb_paths.append(pdb_path)
+                saved_structure_losses.append(loss_value)
         # Early stopping if loss is very small
         if loss_value < 1e-8:
             print(f"\nLoss converged to {loss_value:.2e} at iteration {iteration}")
@@ -178,8 +189,19 @@ def optimize_single_sequence(model, batch, target_saxs, seq_name,
         final_dir = f"{output_dir}/final"
         final_pdb = save_structure_output(outputs, batch, final_dir, seq_name)
         
-        # Save loss history
+        # Save loss history for all iterations
         np.save(f"{output_dir}/loss_history.npy", np.array(loss_history))
+        
+        # Save saved structure data as numpy arrays
+        np.save(f"{output_dir}/saved_structure_losses.npy", np.array(saved_structure_losses))
+        
+        # Save CSV with saved structure data
+        with open(f"{output_dir}/saved_structures.csv", 'w', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(['pdb_filename', 'loss', 'full_path'])  # header
+            for pdb_path, loss in zip(saved_pdb_paths, saved_structure_losses):
+                pdb_filename = os.path.basename(pdb_path)
+                writer.writerow([pdb_filename, f"{loss:.8f}", pdb_path])
         
         # Save optimization summary
         with open(f"{output_dir}/optimization_summary.txt", 'w') as f:
