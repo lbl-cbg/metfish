@@ -15,6 +15,10 @@ from Bio.PDB import PDBIO
 
 from prody import parsePDB, ANM, GNM, extendModel, traverseMode, writePDB
 
+from openfold.np import residue_constants
+from openfold.np.protein import Protein
+from metfish.msa_model.utils.tensor_utils import tensor_tree_map
+
 n_elec_df = {el.symbol: el.number for el in elements}
 amino_acids = [a.upper() for a in SeqUtils.IUPACData.protein_letters_3to1.keys()]
 
@@ -379,3 +383,19 @@ def write_conformers(out_dir, name, protein, pdb_ext='.pdb'):
         conf_idx += 1 
 
     return filenames
+
+def output_to_protein(output):
+    """Returns the pbd (file) string from the model given the model output."""
+    output = tensor_tree_map(lambda x: x.cpu().numpy(), output)
+    final_atom_positions = output['final_atom_positions']
+    final_atom_mask = output["atom37_atom_exists"]
+    pred = Protein(
+        aatype=output["aatype"],
+        atom_positions=final_atom_positions[0],
+        atom_mask=final_atom_mask,
+        residue_index=output["residue_index"] + 1,
+        b_factors=np.repeat(output["plddt"][...,None], residue_constants.atom_type_num, axis=-1)[0],
+        chain_index=output["chain_index"] if "chain_index" in output else None,
+    )
+    
+    return pred
