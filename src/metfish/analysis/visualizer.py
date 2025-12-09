@@ -4,8 +4,7 @@ import numpy as np
 from pathlib import Path
 import matplotlib.pyplot as plt
 import seaborn as sns
-from typing import List, Dict, Optional, Union
-import tempfile
+from typing import List, Dict, Optional
 
 
 class ProteinVisualization:

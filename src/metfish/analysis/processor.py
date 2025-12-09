@@ -8,7 +8,7 @@ from pathlib import Path
 from biopandas.pdb import PandasPdb
 from typing import List, Dict, Tuple, Optional
 
-from metfish.utils import get_rmsd, get_lddt, save_aligned_pdb, get_Pr
+from metfish.utils import get_lddt, save_aligned_pdb, get_Pr
 
 
 class ProteinStructureAnalyzer:
