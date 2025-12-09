@@ -4,7 +4,6 @@ import pandas as pd
 from pathlib import Path
 from typing import Tuple
 
-from metfish.msa_model.predict import inference
 from metfish.analysis.processor import ModelComparisonProcessor
 from metfish.analysis.visualizer import ProteinVisualization
 
@@ -35,9 +34,10 @@ def main(
         }
     }
     
-    # TODO - replace old results archive with the new ones generated from that subset of 40 structures
     # Generate models
     if not skip_inference:
+        from metfish.msa_model.predict import inference
+
         for model_key, model_kwargs in model_dict.items():
             if model_key in models:
                 print(f'Running inference for {model_key}...')
@@ -61,7 +61,7 @@ def main(
     )
     
     names = pd.read_csv(data_dir / 'input_all.csv')['name'].tolist()
-    comparison_df = processor.get_comparison_df(names=names, overwrite=True)
+    comparison_df = processor.get_comparison_df(names=names)
 
     # Visualize results
     color_scheme = {"NMR": "#264882", "NMA": "#b13c6c", "AF": "#56994A", "Target": "#5c5c5c", }
