@@ -72,12 +72,18 @@ def main(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Run protein structure analysis')
-    parser.add_argument('--data-dir', type=str, default=Path("/global/cfs/cdirs/m4704/100125_Nature_Com_data/Apo_holo_data"), help='Data directory')
-    parser.add_argument('--ckpt-dir', type=str, default=Path("/global/cfs/cdirs/m4704/100125_Nature_Com_data/single_conformation"), help='Checkpoint directory')
-    parser.add_argument('--output-dir', type=str, default=Path("/global/cfs/cdirs/m4704/100125_Nature_Com_data/results"), help='Output directory')
-    parser.add_argument('--overwrite', action='store_true', default=False, help='Overwrite existing files')
-    parser.add_argument('--skip-inference', action='store_true', default=True, help='Skip inference step')
-    parser.add_argument('--models', type=str, nargs='+', default=['AlphaFold', 'SFold_NMR', 'SFold_NMA'], help='Models to run')
+    parser.add_argument('--data-dir', type=str, default=Path("/global/cfs/cdirs/m4704/100125_Nature_Com_data/Apo_holo_data"), 
+                        help='Path to the input data directory containing protein sequences and target structures')
+    parser.add_argument('--ckpt-dir', type=str, default=Path("/global/cfs/cdirs/m4704/100125_Nature_Com_data/single_conformation"), 
+                        help='Path to the directory containing model checkpoints')
+    parser.add_argument('--output-dir', type=str, default=Path("/global/cfs/cdirs/m4704/100125_Nature_Com_data/results"), 
+                        help='Path where results and figures will be saved')
+    parser.add_argument('--overwrite', action='store_true', default=False, 
+                        help='Force overwrite of existing output files')
+    parser.add_argument('--skip-inference', action='store_true', default=True, 
+                        help=('Skip the model inference step and only generate figures from existing predictions. '
+                              'Use this flag when you already have model predictions and only want to regenerate visualizations.'))
+    parser.add_argument('--models', type=str, nargs='+', default=['AlphaFold', 'SFold_NMR', 'SFold_NMA'], help='Specify which models to run')
 
     args = parser.parse_args()
     
