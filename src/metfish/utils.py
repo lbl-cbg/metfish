@@ -221,7 +221,7 @@ def get_lddt(predicted_atom_df, true_atom_df, atom_types=["CA", "N", "C", "O"]):
     else:
         return np.asarray(lddt(coords_predicted, coords_true, true_pos_mask))[0]
 
-def save_aligned_pdb(fname_fixed, fname_moving, fname_tag):
+def save_aligned_pdb(fname_fixed, fname_moving, fname_tag, output_dir=None):
     """Align two protein structures from pdb files and save aligned structures
 
     Args:
@@ -244,7 +244,11 @@ def save_aligned_pdb(fname_fixed, fname_moving, fname_tag):
         atom.transform(rot.astype("f"), trans.astype("f"))
 
     # save modified outputs as PDB files
-    fname_aligned = f"{fname_moving.rstrip('.pdb')}_aligned_{fname_tag}.pdb"
+    if output_dir is not None:
+        fname_aligned = os.path.join(output_dir, f"{Path(fname_moving).stem}_aligned_{fname_tag}.pdb")
+    else:
+        fname_aligned = f"{fname_moving.rstrip('.pdb')}_aligned_{fname_tag}.pdb"
+    
     io = PDBIO()
     io.set_structure(structure) 
     io.save(fname_aligned)
