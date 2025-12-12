@@ -37,6 +37,20 @@ To run training, use the following command, which provides several additional fl
 python train.py path/to/data path/to/output
 ```
 
+## Generating Figures
+
+The `scripts/generate_figures.py` script runs model inference and generates comparison visualizations for protein structure predictions. This script processes multiple models (AlphaFold, SFold_NMR, SFold_NMA) and creates figures comparing their performance.
+
+### Basic Usage
+
+```bash
+python scripts/generate_figures.py \
+  --data-dir /path/to/data \
+  --ckpt-dir /path/to/checkpoints \
+  --output-dir /path/to/output \
+  --skip-inference false
+```
+
 ## Commands
 
 - `calc-pr`: Calculate P(r) for models from a PDB or mmCIF file
