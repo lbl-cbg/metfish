@@ -34,8 +34,89 @@ wget -N --no-check-certificate -P openfold/resources \
 
 To run training, use the following command, which provides several additional flags:
 ```bash
-python train.py path/to/data path/to/output
+python src/metfish/msa_model/train.py path/to/data path/to/output
 ```
+
+Note that the training pipeline expects the following directory structure:
+
+```
+data_dir/
+├── pdb/
+│   └── {pdb_prefix}{name}{pdb_ext}  # e.g., fixed_1ABC_A.pdb
+├── saxs_r/
+│   └── {name}{saxs_ext}   # SAXS P(r) data files
+├── msa/
+│   └── a3m
+│     └── {msa_id}.a3m     # MSA data files
+└── scripts/
+    ├── input_training.csv
+    └── input_validation.csv
+```
+
+- **CSV files** (`input_training.csv`, `input_validation.csv`): Must contain:
+  - `name` - Protein identifier (used to locate corresponding files)
+  - `seqres` - Protein amino acid sequence
+  - `msa_id` (optional) - MSA identifier if different from name
+
+- **PDB files**: Standard PDB format structure files
+  - Default naming: `fixed_{name}.pdb` (prefix can vary based on dataset)
+  - The script auto-detects if using simulated data and adjusts paths accordingly
+
+- **SAXS files**: CSV format containing P(r) distribution data
+  - Must include a `P(r)` column with the pair distance distribution
+  - Common naming patterns: `{name}.pdb.pr.csv` or `{name}.pr.csv`
+  - The script auto-detects the extension pattern from existing files
+
+- **MSA directories**: Each protein should have a subdirectory in `msa/` containing:
+  - **A3M files** (`.a3m`): Multiple sequence alignments in A3M format structured within an `a3m` subfolder.
+
+## Generating Figures
+
+The `scripts/generate_figures.py` script runs model inference and generates comparison visualizations for protein structure predictions. This script processes multiple models (AlphaFold, SFold_NMR, SFold_NMA) and creates figures comparing their performance.
+
+### Basic Usage
+
+```bash
+python scripts/generate_figures.py \
+  --data-dir /path/to/data \
+  --ckpt-dir /path/to/checkpoints \
+  --output-dir /path/to/output \
+  --skip-inference false
+```
+
+Note that the inference pipeline expects the following directory structure:
+
+```
+data_dir/
+├── input_all.csv          # CSV with protein names and sequences
+├── pdbs/
+│   └── {name}.pdb         # PDB structure files
+├── saxs_r/
+│   └── {name}{saxs_ext}   # SAXS P(r) data files
+├── msa/
+│   └── a3m
+│     └── {msa_id}.a3m     # MSA data files
+```
+
+**File Format Requirements:**
+
+- **CSV file** (`input_all.csv`): Must contain the following columns:
+  - `name` - Protein identifier (used to locate corresponding files)
+  - `seqres` - Protein amino acid sequence
+  - `msa_id` (optional) - MSA identifier if different from name
+
+- **PDB files**: Standard PDB format structure files
+  - Default naming: `{name}.pdb`
+  - Can be customized with `--pdb-ext` flag
+
+- **SAXS files**: CSV format containing P(r) distribution data
+  - Must include a `P(r)` column with the pair distance distribution
+  - Default naming: `{name}_atom_only.csv` or `{name}.pdb.pr.csv`
+  - Can be customized with `--saxs-ext` flag
+
+- **MSA directories**: Each protein should have a subdirectory in `msa/` containing:
+  - **A3M files** (`.a3m`): Multiple sequence alignments in A3M format structured within an `a3m` subfolder.
+
 
 ## Commands
 

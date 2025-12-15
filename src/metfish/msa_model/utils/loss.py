@@ -1559,8 +1559,7 @@ def compute_saxs(all_atom_pos: torch.Tensor,
     # Calculate histogram (note no torch hist implementation with weights for cuda)
     if dmax is None:
         dmax = distances.max()
-        dmax = torch.ceil(dmax / step) * step
-        dmax = dmax.item()
+        dmax = np.ceil(dmax.detach().numpy() / step) * step
     bin_edges = torch.arange(0, dmax + 0.1, step, device=distances.device)
     hist_torch = differentiable_histogram(distances, dist_weights.to(distances.device), bin_edges)
 
@@ -1588,7 +1587,7 @@ def differentiable_histogram(values, weights, bin_edges):
 
 def saxs_loss(all_atom_pred_pos: torch.Tensor,
               all_atom_mask: torch.Tensor,
-              saxs: torch.Tensor,
+              all_atom_positions: torch.Tensor,
               step: float = 0.5,
               dmax: float = None,
               eps: float = 1e-10,
@@ -1619,19 +1618,12 @@ def saxs_loss(all_atom_pred_pos: torch.Tensor,
         pred_saxs.append(p_pred)
     pred_saxs = torch.stack(pred_saxs)
     
-    # Pad pred_saxs to shape [1, 512]
-    current_size = pred_saxs.shape[-1]
-    target_size = 512
-    if current_size < target_size:
-        pad_size = target_size - current_size
-        pred_saxs = torch.nn.functional.pad(pred_saxs, (0, pad_size), mode='constant', value=0)
-    
-    saxs = saxs[:,:,0]
     # recalculate for true positions since input structure could vary in binsize
-    # saxs is the true SAXS profile from the batch
-    # Check that saxs and pred_saxs have the same shape
-    if saxs.shape != pred_saxs.shape:
-        raise ValueError(f"Shape mismatch: pred_saxs shape {pred_saxs.shape}, saxs shape {saxs.shape}. Ensure batch['saxs'] matches the predicted SAXS profile shape.")
+    true_saxs = []
+    for (true_pos, mask) in zip(all_atom_positions, all_atom_mask):  # where pred_pos is a single item in the batch
+        p_true = compute_saxs(all_atom_pos=true_pos, all_atom_mask=mask, step=step, dmax=dmax)
+        true_saxs.append(p_true)
+    true_saxs = torch.stack(true_saxs)
 
     if use_l1:
         # calculate the L1 divergence of the SAXS profiles

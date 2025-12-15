@@ -4,6 +4,7 @@ import pickle
 import random
 import os
  
+from pathlib import Path
 from openfold.np import protein, residue_constants
 from openfold.np.protein import Protein
 from openfold.data.data_modules import OpenFoldBatchCollator
@@ -27,15 +28,17 @@ def inference(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/re
          saxs_ext='_atom_only.csv',
          tags=None,
          random_seed=None,
-         overwrite=False
+         overwrite=False,
+         save_output_dict=True,
         ):
     
     # set up data paths and configuration
     print('Setting up data paths and configuration...')
+    output_dir.mkdir(parents=True, exist_ok=True)
     saxs_dir = f"{data_dir}/saxs_r"
     msa_dir = f"{data_dir}/msa"
     pdb_dir = f"{data_dir}/pdbs"
-    test_csv = f'{data_dir}/{test_csv_name}'
+    test_csv = test_csv_name if Path(test_csv_name).is_absolute() else f'{data_dir}/{test_csv_name}'
     tags = f'_{tags}' if tags is not None else ''
 
     config = model_config('initial_training', train=False, low_prec=True) 
@@ -63,7 +66,7 @@ def inference(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/re
     
     # initialize model
     print('Initializing model...')
-    if model_name == 'AFSAXS':
+    if model_name == 'SFold':
         model = MSASAXSModel(config, training=False)
     elif model_name == 'AlphaFold':
         model = AlphaFoldModel(config)  # wrapper for OpenFold AF
@@ -72,6 +75,8 @@ def inference(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/re
     print('Loading weights...')
     if original_weights:
         model.load_from_jax(jax_param_path)
+    elif ckpt_path.name == 'params_model_1.npz':
+        model.load_from_jax(ckpt_path)
     else:
         model = model.load_from_checkpoint(ckpt_path)
         model.load_ema_weights()
@@ -81,7 +86,7 @@ def inference(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/re
     # run inference
     with torch.no_grad():
         for i, item in enumerate(dataset):
-            if not overwrite and os.path.exists(f'{output_dir}/{dataset.get_name(i)}_{model_name}{tags}_unrelaxed.pdb'):
+            if not overwrite and os.path.exists(f'{output_dir}/{dataset.get_name(i)}_{model_name}{tags}.pdb'):
                 print(f"Skipping {dataset.get_name(i)} as output already exists.")
                 continue
 
@@ -99,12 +104,13 @@ def inference(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/re
 
             # save unrelaxed protein as pdb file
             unrelaxed_protein = output_to_protein({**out, **batch})
-            with open(f'{output_dir}/{dataset.get_name(i)}_{model_name}{tags}_unrelaxed.pdb', 'w') as f:
+            with open(f'{output_dir}/{dataset.get_name(i)}_{model_name}{tags}.pdb', 'w') as f:
                 f.write(protein.to_pdb(unrelaxed_protein))
 
             # save output dictionary
-            with open(f'{output_dir}/{dataset.get_name(i)}_{model_name}{tags}_output.pkl', 'wb') as f:
-                pickle.dump(out, f)
+            if save_output_dict:
+                with open(f'{output_dir}/{dataset.get_name(i)}_{model_name}{tags}_output.pkl', 'wb') as f:
+                    pickle.dump(out, f)
 
     return None
 
