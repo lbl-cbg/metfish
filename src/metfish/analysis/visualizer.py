@@ -34,11 +34,11 @@ class ProteinVisualization:
         return palette
     
     def plot_all(self):
-        # self.plot_overall_metrics(['rmsd', 'lddt', 'saxs_kldiv'], 'overall_metrics.pdf')
-        # self.plot_model_improvement('model_improvement.pdf')
+        self.plot_overall_metrics(['rmsd', 'lddt', 'saxs_kldiv'], 'overall_metrics.pdf')
+        self.plot_model_improvement('model_improvement.pdf')
         self.plot_apo_holo_variation('apo_vs_holo_variation.pdf')
         self.plot_apo_holo_comparison('apo_vs_holo_model_comparison.pdf')
-        # self.plot_protein_summary_all()
+        self.plot_protein_summary_all()
     
     def plot_overall_metrics(self,
                             metrics: List[str],
