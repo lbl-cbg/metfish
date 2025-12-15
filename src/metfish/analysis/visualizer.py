@@ -34,9 +34,11 @@ class ProteinVisualization:
         return palette
     
     def plot_all(self):
-        self.plot_overall_metrics(['rmsd', 'lddt', 'saxs_kldiv'], 'overall_metrics.pdf')
-        self.plot_model_improvement('model_improvement.pdf')
-        self.plot_protein_summary_all()
+        # self.plot_overall_metrics(['rmsd', 'lddt', 'saxs_kldiv'], 'overall_metrics.pdf')
+        # self.plot_model_improvement('model_improvement.pdf')
+        self.plot_apo_holo_variation('apo_vs_holo_variation.pdf')
+        self.plot_apo_holo_comparison('apo_vs_holo_model_comparison.pdf')
+        # self.plot_protein_summary_all()
     
     def plot_overall_metrics(self,
                             metrics: List[str],
@@ -207,6 +209,139 @@ class ProteinVisualization:
         for name in self.df['name'].unique():
             self.plot_protein_structures(name, save_path=f'protein_{name}_structures.pdf')
 
+    def plot_apo_holo_variation(self, save_path: str = 'apo_vs_holo_variation.pdf'):
+        """
+        Plot structure variation between apo/holo pairs for each model.
+        Creates a boxplot showing RMSD between apo and holo predictions.
+        """
+        # Create comparison list for apo vs holo pairs
+        comparison_list = [f'out_{c}_vs_out_alt_{c}' for c in self.models]
+        comparison_labels = [self.map_labels(c) for c in comparison_list]        
+        metrics = ['rmsd', 'saxs_kldiv']
+        
+        # Prepare data
+        apo_holo_group_df = (self.df[['name', 'comparison', *metrics]]
+                            .query(f'comparison in {comparison_list}')
+                            .melt(id_vars=['name', 'comparison'], 
+                                  value_vars=metrics, 
+                                  var_name='metric', 
+                                  value_name='value')
+                            .assign(labels_comparison=lambda x: x['comparison'].apply(self.map_labels))
+                            .drop('comparison', axis=1))
+        
+        # Create plot
+        fig, ax = plt.subplots(figsize=(10, 5))
+        
+        sns.boxplot(data=apo_holo_group_df.query('metric == "rmsd"'), 
+                   x='labels_comparison', 
+                   y='value',
+                   order=comparison_labels,
+                   hue='labels_comparison',
+                   palette=[self.get_palette([c])[0] for c in comparison_labels],
+                   showfliers=False, width=0.25, zorder=-1, ax=ax)
+        
+        ax.set(ylabel='RMSD (apo vs. holo)', xlabel='Model', 
+               title='Structure variation between apo/holo pairs')
+        sns.despine()
+        
+        save_path = self.output_dir / save_path if self.output_dir is not None else save_path
+        fig.savefig(save_path, format='pdf', dpi=300)
+        
+        return fig, apo_holo_group_df
+    
+    def prepare_apo_holo_analysis_df(self) -> pd.DataFrame:
+        """
+        Prepare analysis dataframe for apo/holo variation comparison.
+        Returns pivoted dataframe with variation change metrics.
+        """
+        comparison_list = [f'out_{c}_vs_out_alt_{c}' for c in self.models]
+        available_comparisons = [c for c in comparison_list if c in self.df['comparison'].values]
+        
+        metrics = ['rmsd', 'saxs_kldiv']
+        
+        # Prepare melted data
+        apo_holo_group_df = (self.df[['name', 'comparison', *metrics]]
+                            .query(f'comparison in {available_comparisons}')
+                            .melt(id_vars=['name', 'comparison'], 
+                                  value_vars=metrics, 
+                                  var_name='metric', 
+                                  value_name='value')
+                            .assign(labels_comparison=lambda x: x['comparison'].apply(self.map_labels))
+                            .drop('comparison', axis=1))
+        
+        # Pivot to get comparison columns
+        apo_holo_rmsd_df = (apo_holo_group_df
+                           .query('metric == "rmsd"')
+                           .pivot(columns='labels_comparison', index=['name', 'metric'])
+                           .reset_index()
+                           .pipe(lambda df: df.set_axis(
+                               [''.join(col) if col[0] != "value" else col[1] 
+                                for col in df.columns.to_flat_index()], axis=1)))
+        
+        # Calculate variation changes compared to AF baseline
+        if 'AF vs. alt AF' in apo_holo_rmsd_df.columns:
+            if 'NMA vs. alt NMA' in apo_holo_rmsd_df.columns:
+                apo_holo_rmsd_df['NMA_vs_AF_change'] = (
+                    apo_holo_rmsd_df['NMA vs. alt NMA'] - apo_holo_rmsd_df['AF vs. alt AF'])
+            if 'NMR vs. alt NMR' in apo_holo_rmsd_df.columns:
+                apo_holo_rmsd_df['NMR_vs_AF_change'] = (
+                    apo_holo_rmsd_df['NMR vs. alt NMR'] - apo_holo_rmsd_df['AF vs. alt AF'])
+            
+            apo_holo_rmsd_df = apo_holo_rmsd_df.sort_values('AF vs. alt AF')
+        
+        return apo_holo_rmsd_df
+    
+    def plot_apo_holo_comparison(self, save_path: str = 'apo_vs_holo_model_comparison.pdf'):
+        """
+        Plot scatter comparison of apo/holo variation between AF and other models.
+        Includes zoomed inset for detailed view of low-RMSD region.
+        """
+        from mpl_toolkits.axes_grid1.inset_locator import zoomed_inset_axes, mark_inset
+    
+        # Prepare analysis dataframe
+        apo_holo_rmsd_df = self.prepare_apo_holo_analysis_df()
+        model_cols = [col for col in apo_holo_rmsd_df.columns 
+                     if 'vs.' in col and 'AF vs. alt AF' not in col and 'name' not in col]
+        
+        # Prepare data for plotting
+        combined_data = pd.melt(apo_holo_rmsd_df.query('metric == "rmsd"'), 
+                               id_vars=['AF vs. alt AF'],
+                               value_vars=model_cols,
+                               var_name='Method',
+                               value_name='RMSD')
+        
+        # Create plot
+        fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+        
+        sns.scatterplot(data=combined_data, y='AF vs. alt AF', x='RMSD', hue='Method',
+                       palette=[self.get_palette([c])[0] for c in model_cols],
+                       ax=ax, legend=True)
+        
+        # Identity line
+        lims = (-0.5, 10)
+        ax.plot(lims, lims, linestyle='dashed', color='k', alpha=0.5)
+        ax.set(title='RMSD', ylabel='AF RMSD Apo vs. Holo', xlabel='Model RMSD Apo vs. Holo',
+               xlim=lims, ylim=lims)
+        sns.despine()
+        
+        # Create zoomed inset
+        axins = zoomed_inset_axes(ax, zoom=4, loc='upper left')
+        sns.scatterplot(data=combined_data, y='AF vs. alt AF', x='RMSD', hue='Method',
+                       palette=[self.get_palette([c])[0] for c in model_cols],
+                       ax=axins, legend=False)
+        
+        ins_lims = (-0.05, 1)
+        axins.set(xlim=ins_lims, ylim=ins_lims)
+        axins.plot(ins_lims, ins_lims, linestyle='dashed', color='k', alpha=0.5)
+        mark_inset(ax, axins, loc1=2, loc2=4, fc="none", ec="0.5")
+        
+        ax.legend()
+        
+        save_path = self.output_dir / save_path if self.output_dir is not None else save_path
+        fig.savefig(save_path, dpi=300, format='pdf')
+        
+        return fig, apo_holo_rmsd_df
+    
     def _plot_protein_saxs_summary(self, name: str, ax: plt.Axes):
         """
         Create a compact visualization for a single protein in a subplot.
@@ -263,4 +398,3 @@ class ProteinVisualization:
         ax.set_ylabel('P(r)', fontsize=8)
         ax.set_title(name, fontsize=9, fontweight='bold')
         sns.despine(ax=ax)
-    
