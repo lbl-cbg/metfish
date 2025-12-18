@@ -63,6 +63,9 @@ def model_config(
     if name == "generating":
         # AF2 Suppl. Table 4, "initial training" setting
         pass
+    elif name == "initial_training":
+        # AF2 Suppl. Table 4, "initial training" setting
+        pass    
     elif name == "finetuning":
         # AF2 Suppl. Table 4, "finetuning" setting
         c.data.train.crop_size = 384
@@ -411,6 +414,10 @@ config = mlc.ConfigDict(
                 "c_z": c_z,
                 "c_m": c_m,
                 "relpos_k": 32,
+            },
+            # Global model-level configuration (used by tests and runtime flags)
+            "global_config": {
+                "deterministic": False,
             },
             "saxs_msa_attention": {
                 "c_q": c_m,

@@ -1,0 +1,111 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ['3.8', '3.9', '3.10', '3.11']
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Cache pip packages
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt', '**/pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+        pip install -e ".[dev]"
+
+    - name: Run unit tests
+      run: |
+        pytest tests/ -v -m "unit" --cov=src/metfish --cov-report=xml --cov-report=term-missing
+
+    - name: Run basic tests (no torch/openfold)
+      run: |
+        pytest tests/ -v -m "not requires_torch and not requires_openfold and not slow" --cov=src/metfish --cov-report=xml --cov-report=term-missing
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+
+  test-with-optional-deps:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11']
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install dependencies with optional packages
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+        pip install -e ".[dev]"
+        pip install -e ".[training]" || echo "Training dependencies installation failed, continuing..."
+
+    - name: Run all tests
+      run: |
+        pytest tests/ -v --cov=src/metfish --cov-report=xml --cov-report=term-missing
+      continue-on-error: true
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+
+    - name: Run ruff
+      run: |
+        ruff check src/ tests/
+      continue-on-error: true
+
+    - name: Run black check
+      run: |
+        black --check src/ tests/
+      continue-on-error: true
+
+    - name: Run codespell
+      run: |
+        codespell src/ tests/ README.md
+      continue-on-error: true
