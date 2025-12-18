@@ -44,7 +44,7 @@ def main(
                 inference(**model_kwargs, 
                         data_dir=data_dir,
                         output_dir=output_dir / model_kwargs['tags'],
-                        test_csv_name=data_dir / 'input.csv',
+                        test_csv_name=data_dir / 'input_all.csv',
                         overwrite=overwrite,
                         deterministic=True,
                         random_seed=1234,

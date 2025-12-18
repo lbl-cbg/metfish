@@ -3,7 +3,7 @@ import torch
 from openfold.model.model import AlphaFold
 
 
-from metfish.msa_model.utils.loss import compute_saxs,saxs_loss
+from metfish.msa_model.utils.loss import compute_saxs,saxs_loss_ensemble
 from metfish.refinement_model.model.saxs_structure import StructureSAXS
 
 # --- Copied from train_structure.py to avoid circular import ---
@@ -143,7 +143,7 @@ class StructureModel(torch.nn.Module):
         
         # Compute SAXS curve from predicted structure
 
-        saxs_loss_calculated= saxs_loss(all_atom_pred_pos=pred_positions, all_atom_mask=outputs.get('final_atom_mask', None), saxs=batch['saxs'])
+        saxs_loss_calculated= saxs_loss_ensemble(all_atom_pred_pos=pred_positions, all_atom_mask=outputs.get('final_atom_mask', None), saxs=batch['saxs'])
 
         return saxs_loss_calculated
     
