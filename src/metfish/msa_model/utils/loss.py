@@ -1663,13 +1663,12 @@ def saxs_loss_ensemble(all_atom_pred_pos: torch.Tensor,
     Returns:
         [*] loss tensor
     """
-    # get the coordinates and weights for each atom
     # If dmax is None, set it to a large default value to avoid CUDA tensor conversion issues
     if dmax is None:
         dmax = 256.0  # Default max distance in Angstroms
     
     pred_saxs = []
-    for (pred_pos, mask) in zip(all_atom_pred_pos, all_atom_mask):  # where pred_pos is a single item in the batch
+    for (pred_pos, mask) in zip(all_atom_pred_pos, all_atom_mask):
         p_pred = compute_saxs(all_atom_pos=pred_pos, all_atom_mask=mask, step=step, dmax=dmax)
         pred_saxs.append(p_pred)
     pred_saxs = torch.stack(pred_saxs)
@@ -1678,26 +1677,20 @@ def saxs_loss_ensemble(all_atom_pred_pos: torch.Tensor,
     if saxs.dim() == 3:
         saxs = saxs[:,:,0]
     
-    # Pad both pred_saxs and saxs to the same target size
-    target_size = 512
+    # Pad both pred_saxs and saxs to match the larger of the two sizes (no truncation)
+    pred_size = pred_saxs.shape[-1]
+    saxs_size = saxs.shape[-1]
+    target_size = max(pred_size, saxs_size)
     
-    # Pad pred_saxs
-    current_pred_size = pred_saxs.shape[-1]
-    if current_pred_size < target_size:
-        pad_size = target_size - current_pred_size
+    # Pad pred_saxs if needed
+    if pred_size < target_size:
+        pad_size = target_size - pred_size
         pred_saxs = torch.nn.functional.pad(pred_saxs, (0, pad_size), mode='constant', value=0)
-    elif current_pred_size > target_size:
-        # Truncate if longer than target
-        pred_saxs = pred_saxs[:, :target_size]
     
-    # Pad saxs to match
-    current_saxs_size = saxs.shape[-1]
-    if current_saxs_size < target_size:
-        pad_size = target_size - current_saxs_size
+    # Pad saxs if needed
+    if saxs_size < target_size:
+        pad_size = target_size - saxs_size
         saxs = torch.nn.functional.pad(saxs, (0, pad_size), mode='constant', value=0)
-    elif current_saxs_size > target_size:
-        # Truncate if longer than target
-        saxs = saxs[:, :target_size]
     
     # Check that saxs and pred_saxs have the same shape
     if saxs.shape != pred_saxs.shape:
