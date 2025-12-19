@@ -15,10 +15,6 @@ from Bio.PDB import PDBIO
 
 from prody import parsePDB, ANM, GNM, extendModel, traverseMode, writePDB
 
-from openfold.np import residue_constants
-from openfold.np.protein import Protein
-from metfish.msa_model.utils.tensor_utils import tensor_tree_map
-
 n_elec_df = {el.symbol: el.number for el in elements}
 amino_acids = [a.upper() for a in SeqUtils.IUPACData.protein_letters_3to1.keys()]
 
@@ -355,32 +351,10 @@ def sample_conformers(fname, n_modes=2, n_confs=6, rmsd=3.0, type='ANM'):
     # rmsd = len(calphas) * rmsd_ratio  # 0.02 is a potential default value
     # ens = sampleModes(anm_ext, atoms=protein, n_confs=n_confs, rmsd=rmsd) # random sample (rmsd = avg)
     for i, mode in enumerate(nm_ext):
-        try:
-            ens = traverseMode(nm_ext[mode], atoms=protein, n_steps=int(n_confs/2), rmsd=rmsd)  # trajectory along a mode (rmsd = max)
+        ens = traverseMode(nm_ext[mode], atoms=protein, n_steps=int(n_confs/2), rmsd=rmsd)  # trajectory along a mode (rmsd = max)
 
-            # write confirmations
-            protein.addCoordset(ens.getCoordsets(), label=f'mode{i}')
-        except ValueError:
-            # Fallback: some ProDy installations may produce modes that don't
-            # directly map to the full-atom AtomGroup used here (e.g. modes for
-            # calphas only). To keep tests and downstream code robust, fall
-            # back to creating simple perturbed coordinate sets based on the
-            # current coordinates. This is a conservative, local fallback that
-            # preserves atom counts so addCoordset succeeds.
-            n_steps = max(1, int(n_confs / 2))
-            try:
-                orig_coords = protein.getCoords()
-            except Exception:
-                # As a last resort, try to get the first coordset
-                orig_coords = protein.getCoordsets()[0]
-
-            coords = np.tile(orig_coords[None, :, :], (n_steps, 1, 1))
-            # small random perturbation scaled to requested rmsd (not exact)
-            rng = np.random.default_rng(0)
-            scale = max(1e-6, float(rmsd) / max(1.0, np.sqrt(coords.shape[1])))
-            noise = rng.normal(scale=scale, size=coords.shape)
-            coords += noise
-            protein.addCoordset(coords, label=f'mode{i}')
+        # write confirmations
+        protein.addCoordset(ens.getCoordsets(), label=f'mode{i}')
 
     protein.all.setBetas(0)  # I believe these steps are mainly useful if later optimizations are applied
     protein.ca.setBetas(1)  
@@ -409,21 +383,3 @@ def write_conformers(out_dir, name, protein, pdb_ext='.pdb'):
         conf_idx += 1 
 
     return filenames
-
-def output_to_protein(output):
-    """Returns the pbd (file) string from the model given the model output."""
-    num_res = output["seq_length"][0][0]
-    output = tensor_tree_map(lambda x: x.cpu().numpy(), output)
-    final_atom_positions = output['final_atom_positions']
-    final_atom_mask = output["final_atom_mask"]
-    #final_atom_mask = output["atom37_atom_exists"]
-    pred = Protein(
-        aatype=output["aatype"][0][:num_res,0],
-        atom_positions=final_atom_positions[0][:num_res,:,:],
-        atom_mask=final_atom_mask[0][:num_res,:],
-        residue_index=(output["residue_index"] + 1)[0][:num_res,0],
-        b_factors=np.repeat(output["plddt"][...,None], residue_constants.atom_type_num, axis=-1)[0][:num_res,:],
-        chain_index=output["chain_index"] if "chain_index" in output else None,
-    )
-    
-    return pred

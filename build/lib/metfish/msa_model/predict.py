@@ -37,6 +37,7 @@ def inference(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/re
     output_dir.mkdir(parents=True, exist_ok=True)
     saxs_dir = f"{data_dir}/saxs_r"
     msa_dir = f"{data_dir}/msa"
+    pdb_dir = f"{data_dir}/pdbs"
     test_csv = test_csv_name if Path(test_csv_name).is_absolute() else f'{data_dir}/{test_csv_name}'
     tags = f'_{tags}' if tags is not None else ''
 
@@ -56,8 +57,10 @@ def inference(data_dir="/global/cfs/cdirs/m3513/metfish/PDB70_verB_fixed_data/re
     dataset = MSASAXSDataset(data_config,
                              test_csv,
                              mode='predict',
-                             data_dir=data_dir,
                              msa_dir=msa_dir,
+                             pdb_dir=pdb_dir,
+                             pdb_ext=pdb_ext,
+                             pdb_prefix='',
                              saxs_dir=saxs_dir,
                              saxs_ext=saxs_ext)
     

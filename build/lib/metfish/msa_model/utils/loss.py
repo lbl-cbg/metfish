@@ -13,7 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
 import logging
 import ml_collections
 import numpy as np
@@ -1591,18 +1590,18 @@ def saxs_loss(all_atom_pred_pos: torch.Tensor,
               step: float = 0.5,
               dmax: float = None,
               eps: float = 1e-10,
-              use_l1: bool = True,
+              use_l1: bool = False,
     **kwargs
 ) -> torch.Tensor:
-    """    Computes saxs loss for the training.
+    """    Computes saxs loss.
 
     Args:
         all_atom_pred_pos:
             [*, N_pts, 37, 3] All-atom predicted atom positions
         all_atom_mask:
             [*, N_pts, 37] Mask for all-atom predicted atom positions
-        all_atom_positions:
-            [*, N_pts, 37, 3] All-atom true atom positions
+        saxs:
+            [*, N_bins] SAXS profile
         dmax (int, float, None): the max distance between atoms to
                                  consider. default = None i.e. determine
                                  from max distance found in structure
@@ -1634,77 +1633,6 @@ def saxs_loss(all_atom_pred_pos: torch.Tensor,
         pred_saxs_log = torch.log((pred_saxs + eps) / (pred_saxs + eps).sum(dim=1, keepdim=True))  # pred_saxs already probabilities so just take log
         kl_loss = nn.KLDivLoss(reduction="batchmean")
         loss = kl_loss(pred_saxs_log, true_saxs)
-
-    return loss
-
-def saxs_loss_ensemble(all_atom_pred_pos: torch.Tensor,
-              all_atom_mask: torch.Tensor,
-              saxs: torch.Tensor,
-              step: float = 0.5,
-              dmax: float = None,
-              eps: float = 1e-10,
-              use_l1: bool = True,
-    **kwargs
-) -> torch.Tensor:
-    """    Computes saxs loss for the ensemble optimization. Should be combined to the previous loss when have time.
-
-    Args:
-        all_atom_pred_pos:
-            [*, N_pts, 37, 3] All-atom predicted atom positions
-        all_atom_mask:
-            [*, N_pts, 37] Mask for all-atom predicted atom positions
-        saxs:
-            [*, N_bins] SAXS profile
-        dmax (int, float, None): the max distance between atoms to
-                                 consider. default = None i.e. determine
-                                 from max distance found in structure
-        step (float): the bin width to use for building
-                      histogram. default = 0.5
-    Returns:
-        [*] loss tensor
-    """
-    # If dmax is None, set it to a large default value to avoid CUDA tensor conversion issues
-    if dmax is None:
-        dmax = 256.0  # Default max distance in Angstroms
-    
-    pred_saxs = []
-    for (pred_pos, mask) in zip(all_atom_pred_pos, all_atom_mask):
-        p_pred = compute_saxs(all_atom_pos=pred_pos, all_atom_mask=mask, step=step, dmax=dmax)
-        pred_saxs.append(p_pred)
-    pred_saxs = torch.stack(pred_saxs)
-    
-    # Extract saxs from input (remove last dimension if it exists)
-    if saxs.dim() == 3:
-        saxs = saxs[:,:,0]
-    
-    # Pad both pred_saxs and saxs to match the larger of the two sizes (no truncation)
-    pred_size = pred_saxs.shape[-1]
-    saxs_size = saxs.shape[-1]
-    target_size = max(pred_size, saxs_size)
-    
-    # Pad pred_saxs if needed
-    if pred_size < target_size:
-        pad_size = target_size - pred_size
-        pred_saxs = torch.nn.functional.pad(pred_saxs, (0, pad_size), mode='constant', value=0)
-    
-    # Pad saxs if needed
-    if saxs_size < target_size:
-        pad_size = target_size - saxs_size
-        saxs = torch.nn.functional.pad(saxs, (0, pad_size), mode='constant', value=0)
-    
-    # Check that saxs and pred_saxs have the same shape
-    if saxs.shape != pred_saxs.shape:
-        raise ValueError(f"Shape mismatch: pred_saxs shape {pred_saxs.shape}, saxs shape {saxs.shape}. Ensure batch['saxs'] matches the predicted SAXS profile shape.")
-
-    if use_l1:
-        # calculate the L1 divergence of the SAXS profiles
-        l1_loss = nn.L1Loss(reduction="sum")
-        loss = l1_loss(pred_saxs, saxs)
-    else:
-        # calculate the KL divergence of the SAXS profiles
-        pred_saxs_log = torch.log((pred_saxs + eps) / (pred_saxs + eps).sum(dim=1, keepdim=True))  # pred_saxs already probabilities so just take log
-        kl_loss = nn.KLDivLoss(reduction="batchmean")
-        loss = kl_loss(pred_saxs_log, saxs)
 
     return loss
 
