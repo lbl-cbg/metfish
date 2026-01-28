@@ -550,52 +550,19 @@ class FigureVisualization:
     - Multi-panel figures: Combine 3-4 panels horizontally
     """
     
-    # Professional color scheme (Nature Comm style, colorblind-safe)
-    COLORS_MODELS = {
-        'OpenFold': '#0173B2',      # IBM Blue (baseline)
-        'AlphaSAXS': '#DE8F05',     # Golden poppy (your method)
-        'NMR': '#DE8F05',           # Same as AlphaSAXS
-    }
-    
-    COLORS_QUALITY = {
-        'Low': '#CC78BC',           # Muted orchid (purple)
-        'Medium': '#029E73',        # Persian green (teal)
-        'High': '#ECE133',          # Bright yellow (success)
-    }
-    
-    COLORS_SUPPORT = {
-        'reference': '#949494',     # Medium gray
-        'baseline': '#E64B35',      # Cinnabar red (thresholds)
-        'grid': '#ECECEC',          # Light gray
-    }
-    
-    ALPHA = {
-        'fill': 0.4,                # Filled violin/box areas
-        'scatter': 0.65,            # Scatter points
-        'overlay': 0.15,            # Secondary data overlays
-        'grid': 0.3,                # Grid lines
-    }
-    
     def __init__(self, output_dir: Path = None):
         self.output_dir = Path(output_dir) if output_dir else Path(".")
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        self._set_style()
     
     def _set_style(self):
-        """Set Nature Communications publication style with larger fonts."""
+        """Set publication style - kept for compatibility but uses minimal customization."""
         plt.rcParams.update({
-            'font.size': 12,              # Base font (12pt for readability)
-            'axes.labelsize': 14,         # Axis labels
-            'axes.titlesize': 14,         # Subplot titles
-            'xtick.labelsize': 12,        # Tick labels
-            'ytick.labelsize': 12,
-            'legend.fontsize': 11,        # Legend
-            'font.family': 'sans-serif',
-            'font.sans-serif': ['Arial', 'Helvetica', 'DejaVu Sans', 'Liberation Sans', 'sans-serif'],
-            'pdf.fonttype': 42,           # Editable PDF text
-            'axes.linewidth': 1.5,        # Thicker axes for clarity
-            'xtick.major.width': 1.5,
-            'ytick.major.width': 1.5,
+            'font.size': 11,
+            'axes.labelsize': 12,
+            'xtick.labelsize': 11,
+            'ytick.labelsize': 11,
+            'legend.fontsize': 11,
+            'pdf.fonttype': 42,
         })
     
     def _save(self, fig: plt.Figure, save_path: str, dpi: int = 600):
@@ -619,20 +586,15 @@ class FigureVisualization:
             )
         
         sns.violinplot(y='rmsd', x='OpenFold Accuracy', hue='type',
-                       palette=self.COLORS_MODELS, fill=True, alpha=self.ALPHA['fill'],
                        data=df, ax=ax, order=['Low', 'Medium', 'High'],
-                       linewidth=1.5, inner='quartile', cut=0)
+                       fill=False)
         
         ax.set_xlabel('OpenFold Accuracy', labelpad=4)
         ax.set_ylabel('RMSD (Å)', labelpad=4)
-        ax.grid(True, alpha=self.ALPHA['grid'], linewidth=0.5, linestyle='--', zorder=0)
-        ax.set_axisbelow(True)
         if ax.get_legend():
             ax.get_legend().set_title(None)
-            ax.get_legend().set_frame_on(True)
-        sns.despine(ax=ax)
         
-        plt.tight_layout(pad=0.5)
+        plt.tight_layout()
         return self._save(fig, save_path)
     
     def plot_rg_comparison(self, df: pd.DataFrame, save_path: str = None) -> plt.Figure:
@@ -648,20 +610,15 @@ class FigureVisualization:
             )
         
         sns.violinplot(y='rg_diff_A', x='OpenFold Accuracy', hue='type',
-                       palette=self.COLORS_MODELS, fill=True, alpha=self.ALPHA['fill'],
                        data=df, ax=ax, order=['Low', 'Medium', 'High'],
-                       linewidth=1.5, inner='quartile', cut=0)
+                       fill=False)
         
         ax.set_xlabel('OpenFold Accuracy', labelpad=4)
         ax.set_ylabel('Rg Accuracy (Å)', labelpad=4)
-        ax.grid(True, alpha=self.ALPHA['grid'], linewidth=0.5, linestyle='--', zorder=0)
-        ax.set_axisbelow(True)
         if ax.get_legend():
             ax.get_legend().set_title(None)
-            ax.get_legend().set_frame_on(True)
-        sns.despine(ax=ax)
         
-        plt.tight_layout(pad=0.5)
+        plt.tight_layout()
         return self._save(fig, save_path)
     
     def plot_metrics_comparison_barplot(self, df: pd.DataFrame, save_path: str = None) -> plt.Figure:
@@ -696,8 +653,8 @@ class FigureVisualization:
         x_order = ['RMSD vs Truth', 'SAXS L1 Loss', 'Rg Diff vs Truth']
         
         ax = sns.barplot(data=means_long, x='Metric_Label', y='Percentage', hue='type',
-                         palette=self.COLORS_MODELS, hue_order=hue_order, order=x_order,
-                         edgecolor='black', linewidth=1.2, alpha=0.85)
+                         hue_order=hue_order, order=x_order,
+                         edgecolor='black', linewidth=0.5)
         
         plt.axhline(100, color=self.COLORS_SUPPORT['reference'], linestyle='--', 
                     linewidth=2, alpha=0.7, zorder=1)
@@ -747,7 +704,8 @@ class FigureVisualization:
             )
         
         sns.violinplot(y='pr_div', x='apo_holo_similarity', hue='type',
-                       fill=False, data=df_plot, ax=ax, order=['Low', 'Medium', 'High'])
+                       data=df_plot, ax=ax, order=['Low', 'Medium', 'High'],
+                       fill=False)
         
         ax.set_xlabel('Apo vs Holo Similarity', labelpad=4)
         ax.set_ylabel('P(r) Div', labelpad=4)
@@ -773,7 +731,8 @@ class FigureVisualization:
             )
         
         sns.violinplot(y='rmsd_div', x='apo_holo_similarity', hue='type',
-                       fill=False, data=df_plot, ax=ax, order=['Low', 'Medium', 'High'])
+                       data=df_plot, ax=ax, order=['Low', 'Medium', 'High'],
+                       fill=False)
         
         ax.set_xlabel('Ground Truth Apo vs Holo Similarity', labelpad=4)
         ax.set_ylabel('Apo vs Holo RMSD (Å)', labelpad=4)
@@ -814,7 +773,8 @@ class FigureVisualization:
             {'Metric': 'SAXS_L1', 'Percentage': saxs_pct, 'Absolute': model_means['pr_div'], 'Ref_Absolute': ref_means['ref_pr_div']}
         ])
         
-        ax = sns.barplot(data=plot_df, x='Metric', y='Percentage', color='steelblue')
+        ax = sns.barplot(data=plot_df, x='Metric', y='Percentage', 
+                        color='#4575b4', edgecolor='black', linewidth=0.8)
         
         # Annotations
         for i, (idx, row) in enumerate(plot_df.iterrows()):
@@ -831,7 +791,7 @@ class FigureVisualization:
             new_labels.append(f"{row['Metric']}\n(GT: {row['Ref_Absolute']:.2f}{unit})")
         ax.set_xticklabels(new_labels)
         
-        plt.axhline(100, color='red', linestyle='--', linewidth=2, label='Ground Truth (100%)')
+        plt.axhline(100, color='#e74c3c', linestyle='--', linewidth=2, label='Ground Truth (100%)')
         plt.title('AlphaSAXS Recovery of\nApo-Holo Differences')
         plt.ylabel('Percentage vs Ground Truth')
         plt.tight_layout()
@@ -858,8 +818,9 @@ class FigureVisualization:
         
         # Plot
         ax = plt.gca()
-        sns.regplot(x=x, y=y, scatter_kws={'alpha': 0.5}, 
-                   line_kws={'color': 'red', 'linewidth': 2}, ax=ax)
+        sns.regplot(x=x, y=y, 
+                   scatter_kws={'s': 50, 'alpha': 0.6, 'edgecolor': 'white', 'linewidth': 0.5}, 
+                   line_kws={'color': '#e74c3c', 'linewidth': 2}, ax=ax)
         
         # Add annotation
         text_str = f'$r = {r:.2f}$\n$p = {p_value:.2g}$'
@@ -884,11 +845,13 @@ class FigureVisualization:
         mean_df.columns = ['Metrics', 'Value']
         mean_df['Metrics'] = ['Best RMSD', 'Average RMSD']
         
-        palette = sns.color_palette('magma', n_colors=2)
+        # Use professional blue shades (avoid yellow)
+        palette = ['#4575b4', '#74add1']  # Blue gradient
         sns.barplot(data=mean_df, x='Metrics', y='Value', hue='Metrics',
-                    palette=palette, legend=None, ax=ax)
+                    palette=palette, legend=None, ax=ax,
+                    edgecolor='black', linewidth=1.0)
         
-        ax.axhline(baseline, linestyle='--', color='red', 
+        ax.axhline(baseline, linestyle='--', color='#e74c3c', 
                   linewidth=2, label='AlphaSAXS Baseline')
         ax.set_title('Ensemble Method Performance')
         ax.set_ylabel('Accuracy RMSD vs Ground Truth (Å)')
@@ -905,11 +868,13 @@ class FigureVisualization:
         """Scatter plot: Ensemble Rg vs Reference Rg."""
         fig, ax = plt.subplots(figsize=(3.54, 3.54), dpi=600)
         
-        ax.scatter(df['rg_ref'], df['rg_avg'], alpha=0.5, color='blue')
+        ax.scatter(df['rg_ref'], df['rg_avg'], 
+                  s=50, alpha=0.6, color='#4575b4',
+                  edgecolor='white', linewidth=0.5)
         
         lims = [min(df['rg_ref'].min(), df['rg_avg'].min()),
                 max(df['rg_ref'].max(), df['rg_avg'].max())]
-        ax.plot(lims, lims, '--', color='red', alpha=0.3)
+        ax.plot(lims, lims, '--', color='#878787', linewidth=1.5, alpha=0.7, label='Identity')
         
         ax.set_xlabel(r'$R_g$ target (nm)', fontsize=15)
         ax.set_ylabel(r'$R_g$ ensemble (nm)', fontsize=15)
@@ -921,11 +886,13 @@ class FigureVisualization:
         """Scatter plot: Ensemble Re vs Reference Re."""
         fig, ax = plt.subplots(figsize=(3.54, 3.54), dpi=600)
         
-        ax.scatter(df['re_ref'], df['re_avg'], alpha=0.5, color='blue')
+        ax.scatter(df['re_ref'], df['re_avg'], 
+                  s=50, alpha=0.6, color='#4575b4',
+                  edgecolor='white', linewidth=0.5)
         
         lims = [min(df['re_ref'].min(), df['re_avg'].min()),
                 max(df['re_ref'].max(), df['re_avg'].max())]
-        ax.plot(lims, lims, '--', color='red', alpha=0.3)
+        ax.plot(lims, lims, '--', color='#878787', linewidth=1.5, alpha=0.7, label='Identity')
         
         ax.set_xlabel(r'$R_{ee}$ target (nm)', fontsize=15)
         ax.set_ylabel(r'$R_{ee}$ ensemble (nm)', fontsize=15)
@@ -937,8 +904,11 @@ class FigureVisualization:
         """Scatter plot: Ensemble diversity vs accuracy."""
         fig, ax = plt.subplots(figsize=(3.54, 3.54), dpi=600)
         
+        # Use blue color scheme
         sns.scatterplot(data=df, x='rmsd_avg', y='pair_rmsd_avg', 
-                        palette='magma', legend=None, ax=ax)
+                        color='#4575b4', s=50, alpha=0.6, 
+                        edgecolor='white', linewidth=0.5,
+                        legend=None, ax=ax)
         
         ax.set_xlabel('Average RMSD vs Ground Truth (Å)')
         ax.set_ylabel('RMSD Diversity of Conformations in Ensemble (Å)')
