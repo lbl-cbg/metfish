@@ -747,19 +747,14 @@ class FigureVisualization:
             )
         
         sns.violinplot(y='pr_div', x='apo_holo_similarity', hue='type',
-                       palette=self.COLORS_MODELS, fill=True, alpha=self.ALPHA['fill'],
-                       data=df_plot, ax=ax, order=['Low', 'Medium', 'High'],
-                       linewidth=1.5, inner='quartile', cut=0)
+                       fill=False, data=df_plot, ax=ax, order=['Low', 'Medium', 'High'])
         
         ax.set_xlabel('Apo vs Holo Similarity', labelpad=4)
         ax.set_ylabel('P(r) Div', labelpad=4)
-        ax.grid(True, linestyle='--', alpha=self.ALPHA['grid'], linewidth=0.5, zorder=0)
-        ax.set_axisbelow(True)
-        sns.despine(ax=ax)
         if ax.get_legend():
             ax.get_legend().set_title(None)
         
-        plt.tight_layout(pad=0.5)
+        plt.tight_layout()
         return self._save(fig, save_path)
     
     def plot_rmsd_divergence(self, df: pd.DataFrame, save_path: str = None) -> plt.Figure:
@@ -778,19 +773,14 @@ class FigureVisualization:
             )
         
         sns.violinplot(y='rmsd_div', x='apo_holo_similarity', hue='type',
-                       palette=self.COLORS_MODELS, fill=True, alpha=self.ALPHA['fill'],
-                       data=df_plot, ax=ax, order=['Low', 'Medium', 'High'],
-                       linewidth=1.5, inner='quartile', cut=0)
+                       fill=False, data=df_plot, ax=ax, order=['Low', 'Medium', 'High'])
         
         ax.set_xlabel('Ground Truth Apo vs Holo Similarity', labelpad=4)
         ax.set_ylabel('Apo vs Holo RMSD (Å)', labelpad=4)
-        ax.grid(True, linestyle='--', alpha=self.ALPHA['grid'], linewidth=0.5, zorder=0)
-        ax.set_axisbelow(True)
-        sns.despine(ax=ax)
         if ax.get_legend():
             ax.get_legend().set_title(None)
         
-        plt.tight_layout(pad=0.5)
+        plt.tight_layout()
         return self._save(fig, save_path)
     
     def plot_alphasaxs_recovery_barplot(self, df: pd.DataFrame, save_path: str = None) -> plt.Figure:
@@ -824,9 +814,7 @@ class FigureVisualization:
             {'Metric': 'SAXS_L1', 'Percentage': saxs_pct, 'Absolute': model_means['pr_div'], 'Ref_Absolute': ref_means['ref_pr_div']}
         ])
         
-        ax = sns.barplot(data=plot_df, x='Metric', y='Percentage', 
-                        color=self.COLORS_MODELS['AlphaSAXS'],
-                        edgecolor='black', linewidth=1.2, alpha=0.85)
+        ax = sns.barplot(data=plot_df, x='Metric', y='Percentage', color='steelblue')
         
         # Annotations
         for i, (idx, row) in enumerate(plot_df.iterrows()):
@@ -843,14 +831,10 @@ class FigureVisualization:
             new_labels.append(f"{row['Metric']}\n(GT: {row['Ref_Absolute']:.2f}{unit})")
         ax.set_xticklabels(new_labels)
         
-        plt.axhline(100, color=self.COLORS_SUPPORT['baseline'], linestyle='--', 
-                   linewidth=2, label='Ground Truth (100%)')
+        plt.axhline(100, color='red', linestyle='--', linewidth=2, label='Ground Truth (100%)')
         plt.title('AlphaSAXS Recovery of\nApo-Holo Differences')
         plt.ylabel('Percentage vs Ground Truth')
-        ax.grid(True, linestyle='--', alpha=self.ALPHA['grid'], linewidth=0.5, zorder=0, axis='y')
-        ax.set_axisbelow(True)
-        sns.despine(ax=ax)
-        plt.tight_layout(pad=0.5)
+        plt.tight_layout()
         return self._save(fig, save_path)
     
     def plot_correlation_scatter(self, df: pd.DataFrame, save_path: str = None) -> plt.Figure:
@@ -872,27 +856,20 @@ class FigureVisualization:
         # Calculate Pearson correlation
         r, p_value = stats.pearsonr(x, y)
         
-        # Plot with professional styling
+        # Plot
         ax = plt.gca()
-        sns.regplot(x=x, y=y, 
-                   scatter_kws={'s': 60, 'alpha': self.ALPHA['scatter'], 
-                               'edgecolors': 'white', 'linewidths': 0.7,
-                               'color': self.COLORS_MODELS['AlphaSAXS']},
-                   line_kws={'color': self.COLORS_SUPPORT['baseline'], 'linewidth': 2.5},
-                   ax=ax)
+        sns.regplot(x=x, y=y, scatter_kws={'alpha': 0.5}, 
+                   line_kws={'color': 'red', 'linewidth': 2}, ax=ax)
         
-        # Add annotation with background box
+        # Add annotation
         text_str = f'$r = {r:.2f}$\n$p = {p_value:.2g}$'
         ax.text(0.05, 0.95, text_str, transform=ax.transAxes,
                verticalalignment='top', horizontalalignment='left',
-               bbox=dict(boxstyle='round', facecolor='white', alpha=0.8, edgecolor='black'))
+               bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
         
         ax.set_xlabel('Input Apo-Holo SAXS Difference (L1 Loss)', labelpad=4)
         ax.set_ylabel('Generated Apo vs Holo Difference (L1 Loss)', labelpad=4)
         ax.set_title('Correlation Analysis')
-        ax.grid(True, linestyle='--', alpha=self.ALPHA['grid'], linewidth=0.5, zorder=0)
-        ax.set_axisbelow(True)
-        sns.despine(ax=ax)
         plt.tight_layout()
         return self._save(fig, save_path)
     
@@ -907,13 +884,11 @@ class FigureVisualization:
         mean_df.columns = ['Metrics', 'Value']
         mean_df['Metrics'] = ['Best RMSD', 'Average RMSD']
         
-        # Use sequential blues for ensemble metrics
-        ensemble_colors = ['#4575b4', '#91bfdb']
+        palette = sns.color_palette('magma', n_colors=2)
         sns.barplot(data=mean_df, x='Metrics', y='Value', hue='Metrics',
-                    palette=ensemble_colors, legend=None, ax=ax,
-                    edgecolor='black', linewidth=1.2, alpha=0.85)
+                    palette=palette, legend=None, ax=ax)
         
-        ax.axhline(baseline, linestyle='--', color=self.COLORS_SUPPORT['baseline'], 
+        ax.axhline(baseline, linestyle='--', color='red', 
                   linewidth=2, label='AlphaSAXS Baseline')
         ax.set_title('Ensemble Method Performance')
         ax.set_ylabel('Accuracy RMSD vs Ground Truth (Å)')
@@ -930,85 +905,45 @@ class FigureVisualization:
         """Scatter plot: Ensemble Rg vs Reference Rg."""
         fig, ax = plt.subplots(figsize=(3.54, 3.54), dpi=600)
         
-        ax.scatter(df['rg_ref'], df['rg_avg'], 
-                  s=60, alpha=self.ALPHA['scatter'], 
-                  edgecolors='white', linewidths=0.7,
-                  color=self.COLORS_MODELS['OpenFold'])
+        ax.scatter(df['rg_ref'], df['rg_avg'], alpha=0.5, color='blue')
         
-        # Identity line
-        lims = [
-            np.min([ax.get_xlim(), ax.get_ylim()]),
-            np.max([ax.get_xlim(), ax.get_ylim()])
-        ]
-        ax.plot(lims, lims, linestyle='--', color=self.COLORS_SUPPORT['reference'], 
-               linewidth=2, alpha=0.8, zorder=0, label='Identity')
+        lims = [min(df['rg_ref'].min(), df['rg_avg'].min()),
+                max(df['rg_ref'].max(), df['rg_avg'].max())]
+        ax.plot(lims, lims, '--', color='red', alpha=0.3)
         
-        ax.set_xlabel('Reference Rg (Å)', labelpad=4)
-        ax.set_ylabel('Ensemble Average Rg (Å)', labelpad=4)
-        ax.set_title('Ensemble Rg vs Reference')
-        ax.grid(True, linestyle='--', alpha=self.ALPHA['grid'], linewidth=0.5, zorder=0)
-        ax.set_axisbelow(True)
-        sns.despine(ax=ax)
-        ax.legend(loc='best', frameon=True, fancybox=False, edgecolor='black')
-        plt.tight_layout(pad=0.5)
+        ax.set_xlabel(r'$R_g$ target (nm)', fontsize=15)
+        ax.set_ylabel(r'$R_g$ ensemble (nm)', fontsize=15)
+        
+        plt.tight_layout()
         return self._save(fig, save_path)
     
     def plot_re_ensemble(self, df: pd.DataFrame, save_path: str = None) -> plt.Figure:
         """Scatter plot: Ensemble Re vs Reference Re."""
         fig, ax = plt.subplots(figsize=(3.54, 3.54), dpi=600)
         
-        ax.scatter(df['re_ref'], df['re_avg'], 
-                  s=60, alpha=self.ALPHA['scatter'],
-                  edgecolors='white', linewidths=0.7,
-                  color=self.COLORS_MODELS['OpenFold'])
+        ax.scatter(df['re_ref'], df['re_avg'], alpha=0.5, color='blue')
         
-        # Identity line
-        lims = [
-            np.min([ax.get_xlim(), ax.get_ylim()]),
-            np.max([ax.get_xlim(), ax.get_ylim()])
-        ]
-        ax.plot(lims, lims, linestyle='--', color=self.COLORS_SUPPORT['reference'], 
-               linewidth=2, alpha=0.8, zorder=0, label='Identity')
+        lims = [min(df['re_ref'].min(), df['re_avg'].min()),
+                max(df['re_ref'].max(), df['re_avg'].max())]
+        ax.plot(lims, lims, '--', color='red', alpha=0.3)
         
-        ax.set_xlabel('Reference Re (Å)', labelpad=4)
-        ax.set_ylabel('Ensemble Average Re (Å)', labelpad=4)
-        ax.set_title('Ensemble Re vs Reference')
-        ax.grid(True, linestyle='--', alpha=self.ALPHA['grid'], linewidth=0.5, zorder=0)
-        ax.set_axisbelow(True)
-        sns.despine(ax=ax)
-        ax.legend(loc='best', frameon=True, fancybox=False, edgecolor='black')
-        plt.tight_layout(pad=0.5)
+        ax.set_xlabel(r'$R_{ee}$ target (nm)', fontsize=15)
+        ax.set_ylabel(r'$R_{ee}$ ensemble (nm)', fontsize=15)
+        
+        plt.tight_layout()
         return self._save(fig, save_path)
     
     def plot_diversity_scatter(self, df: pd.DataFrame, save_path: str = None) -> plt.Figure:
         """Scatter plot: Ensemble diversity vs accuracy."""
         fig, ax = plt.subplots(figsize=(3.54, 3.54), dpi=600)
         
-        # Color by quality if available
-        if 'quality_category' in df.columns:
-            scatter = ax.scatter(df['rmsd_avg'], df['diversity_avg'], 
-                                s=60, alpha=self.ALPHA['scatter'],
-                                c=df['quality_category'].map(self.COLORS_QUALITY),
-                                edgecolors='white', linewidths=0.7)
-            # Add legend
-            for quality, color in self.COLORS_QUALITY.items():
-                ax.scatter([], [], c=color, label=quality, s=60, 
-                          edgecolors='white', linewidths=0.7)
-            ax.legend(loc='best', title='Accuracy', frameon=True, 
-                     fancybox=False, edgecolor='black')
-        else:
-            ax.scatter(df['rmsd_avg'], df['diversity_avg'], 
-                      s=60, alpha=self.ALPHA['scatter'],
-                      edgecolors='white', linewidths=0.7,
-                      color=self.COLORS_MODELS['OpenFold'])
+        sns.scatterplot(data=df, x='rmsd_avg', y='pair_rmsd_avg', 
+                        palette='magma', legend=None, ax=ax)
         
-        ax.set_xlabel('Accuracy: Average RMSD (Å)', labelpad=4)
-        ax.set_ylabel('Ensemble Diversity', labelpad=4)
-        ax.set_title('Diversity vs Accuracy')
-        ax.grid(True, linestyle='--', alpha=self.ALPHA['grid'], linewidth=0.5, zorder=0)
-        ax.set_axisbelow(True)
-        sns.despine(ax=ax)
-        plt.tight_layout(pad=0.5)
+        ax.set_xlabel('Average RMSD vs Ground Truth (Å)')
+        ax.set_ylabel('RMSD Diversity of Conformations in Ensemble (Å)')
+        
+        plt.tight_layout()
         return self._save(fig, save_path)
 
 # =============================================================================
