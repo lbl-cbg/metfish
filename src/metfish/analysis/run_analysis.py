@@ -107,18 +107,29 @@ def replot_figure2_rg(csv_path: Path = None, output_dir: Path = OUTPUT_DIR) -> P
 
 
 def replot_figure2_metrics_barplot(csv_path: Path = None, output_dir: Path = OUTPUT_DIR) -> Path:
-    """Replot Figure 2 metrics bar plot from existing CSV without re-running analysis."""
+    """Replot Figure 2 metrics bar plot from model_comparisons.csv (needs saxs_l1 column)."""
     output_dir = Path(output_dir)
-    csv_path = csv_path or output_dir / 'figure2_metrics.csv'
+    
+    # This plot requires the full model_comparisons.csv with saxs_l1 column
+    # Not the figure2_metrics.csv which only has rmsd and rg_diff
+    csv_path = csv_path or Path('/global/cfs/cdirs/m4704/100125_Nature_Com_data/results/model_comparisons.csv')
     
     if not csv_path.exists():
-        raise FileNotFoundError(f"CSV not found: {csv_path}. Run generate_figure2_metrics_barplot() first.")
+        raise FileNotFoundError(f"CSV not found: {csv_path}. This plot needs model_comparisons.csv with saxs_l1 column.")
     
-    df = pd.read_csv(csv_path)
-    print(f"Loaded {len(df)} entries from {csv_path}")
+    result = pd.read_csv(csv_path)
     
-    # Rename AlphaSAXS to NMR for display
-    df['Type'] = df['Type'].replace('AlphaSAXS', 'NMR')
+    # Filter for AF and NMR comparisons with target
+    AF_result = result[(result['type_a']=='out_AF')&(result['type_b']=='target')][['name','rmsd','saxs_l1','rg_diff']]
+    AF_result['rg_diff_A'] = AF_result['rg_diff'] * 10
+    AF_result['type'] = 'OpenFold'
+    
+    NMR_result = result[(result['type_a']=='out_NMR')&(result['type_b']=='target')][['name','rmsd','saxs_l1','rg_diff']]
+    NMR_result['rg_diff_A'] = NMR_result['rg_diff'] * 10
+    NMR_result['type'] = 'AlphaSAXS'
+    
+    df = pd.concat([AF_result, NMR_result])
+    print(f"Loaded {len(df)} entries ({len(AF_result)} AF, {len(NMR_result)} AlphaSAXS)")
     
     viz = FigureVisualization(output_dir)
     fig = viz.plot_metrics_comparison_barplot(df, save_path='figure2_metrics_barplot.png')
@@ -395,11 +406,11 @@ def generate_figure2_metrics_barplot(output_dir: Path = OUTPUT_DIR,
     
     NMR_result = result[(result['type_a']=='out_NMR')&(result['type_b']=='target')][['name','rmsd','saxs_l1','rg_diff']]
     NMR_result['rg_diff_A'] = NMR_result['rg_diff'] * 10
-    NMR_result['type'] = 'NMR'
+    NMR_result['type'] = 'AlphaSAXS'
     
     # Combine
     df_plot = pd.concat([AF_result, NMR_result])
-    print(f"Loaded {len(df_plot)} entries ({len(AF_result)} AF, {len(NMR_result)} NMR)")
+    print(f"Loaded {len(df_plot)} entries ({len(AF_result)} AF, {len(NMR_result)} AlphaSAXS)")
     
     # Generate figure
     fig = viz.plot_metrics_comparison_barplot(df_plot, save_path='figure2_metrics_barplot.png')
