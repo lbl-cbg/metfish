@@ -15,7 +15,6 @@ Organization:
 
 import os
 import pickle
-import shutil
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Any
 
@@ -246,7 +245,15 @@ class ApoHoloPairAnalyzer:
     # --- Figure 3: P(r) Divergence ---
     
     def add_pr_divergence(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Add P(r) and RMSD divergence between apo-holo pairs."""
+        """
+        DEPRECATED: Add P(r) and RMSD divergence between apo-holo pairs.
+        
+        This method recalculates divergences from scratch which is slow.
+        For production use, load pre-computed comparisons from model_comparisons.csv
+        instead (see generate_figure3_pr in run_analysis.py).
+        
+        Kept for reference and backward compatibility.
+        """
         df['pair_id'] = df['pdb_id'].map(self.pair_dict)
         
         def get_ref_pr_div(row):
@@ -493,7 +500,7 @@ class EnsembleAnalyzer:
         
         ensemble_df = self.extract_ensemble(pdb_id, top_n)
         
-        results, contact_maps = [], []
+        results = []
         for index, row in enumerate(ensemble_df.iterrows()):
             _, single_pdb = row
             try:
@@ -688,7 +695,8 @@ class FigureVisualization:
         
         sns.violinplot(y='rmsd', x='OpenFold Accuracy', hue='type',
                        data=df, ax=ax, order=['Low', 'Medium', 'High'],
-                       palette=self.palette, fill=True, alpha=0.3)
+                       palette=self.palette, fill=True, alpha=0.3,
+                       inner_kws={'box_width': 3})
         
         ax.set_xlabel('OpenFold Accuracy', labelpad=4)
         ax.set_ylabel('RMSD (Å)', labelpad=4)
@@ -712,10 +720,36 @@ class FigureVisualization:
         
         sns.violinplot(y='rg_diff_A', x='OpenFold Accuracy', hue='type',
                        data=df, ax=ax, order=['Low', 'Medium', 'High'],
-                       palette=self.palette, fill=True, alpha=0.3)
+                       palette=self.palette, fill=True, alpha=0.3,
+                       inner_kws={'box_width': 3})
         
         ax.set_xlabel('OpenFold Accuracy', labelpad=4)
         ax.set_ylabel('Rg Accuracy (Å)', labelpad=4)
+        if ax.get_legend():
+            ax.get_legend().set_title(None)
+        
+        plt.tight_layout()
+        return self._save(fig, save_path)
+    
+    def plot_saxs_comparison(self, df: pd.DataFrame, save_path: str = None) -> plt.Figure:
+        """Violin plot: SAXS P(r) L1 Loss by OpenFold accuracy category."""
+        fig, ax = plt.subplots(figsize=(3.54, 3.54), dpi=600)
+        
+        # Ensure categorical order if not already set
+        if not isinstance(df['OpenFold Accuracy'].dtype, pd.CategoricalDtype):
+            df['OpenFold Accuracy'] = pd.Categorical(
+                df['OpenFold Accuracy'],
+                categories=['Low', 'Medium', 'High'],
+                ordered=True
+            )
+        
+        sns.violinplot(y='saxs_l1', x='OpenFold Accuracy', hue='type',
+                       data=df, ax=ax, order=['Low', 'Medium', 'High'],
+                       palette=self.palette, fill=True, alpha=0.3,
+                       inner_kws={'box_width': 3})
+        
+        ax.set_xlabel('OpenFold Accuracy', labelpad=4)
+        ax.set_ylabel('SAXS P(r) L1 Loss', labelpad=4)
         if ax.get_legend():
             ax.get_legend().set_title(None)
         
@@ -795,7 +829,7 @@ class FigureVisualization:
         fig, ax = plt.subplots(figsize=(3.54, 3.54), dpi=600)
         
         # Filter out rows without pair data
-        df_plot = df.dropna(subset=['pr_div', 'apo_holo_similarity'])
+        df_plot = df.dropna(subset=['saxs_l1', 'apo_holo_similarity'])
         
         # Ensure categorical order if not already set
         if not isinstance(df_plot['apo_holo_similarity'].dtype, pd.CategoricalDtype):
@@ -805,9 +839,10 @@ class FigureVisualization:
                 ordered=True
             )
         
-        sns.violinplot(y='pr_div', x='apo_holo_similarity', hue='type',
+        sns.violinplot(y='saxs_l1', x='apo_holo_similarity', hue='type',
                        data=df_plot, ax=ax, order=['Low', 'Medium', 'High'],
-                       palette=self.palette, fill=True, alpha=0.3)
+                       palette=self.palette, fill=True, alpha=0.3,
+                       inner_kws={'box_width': 3})
         
         ax.set_xlabel('Apo vs Holo Similarity', labelpad=4)
         ax.set_ylabel('P(r) Div', labelpad=4)
@@ -822,7 +857,7 @@ class FigureVisualization:
         fig, ax = plt.subplots(figsize=(3.54, 3.54), dpi=600)
         
         # Filter out rows without pair data
-        df_plot = df.dropna(subset=['rmsd_div', 'apo_holo_similarity'])
+        df_plot = df.dropna(subset=['rmsd', 'apo_holo_similarity'])
         
         # Ensure categorical order if not already set
         if not isinstance(df_plot['apo_holo_similarity'].dtype, pd.CategoricalDtype):
@@ -832,9 +867,10 @@ class FigureVisualization:
                 ordered=True
             )
         
-        sns.violinplot(y='rmsd_div', x='apo_holo_similarity', hue='type',
+        sns.violinplot(y='rmsd', x='apo_holo_similarity', hue='type',
                        data=df_plot, ax=ax, order=['Low', 'Medium', 'High'],
-                       palette=self.palette, fill=True, alpha=0.3)
+                       palette=self.palette, fill=True, alpha=0.3,
+                       inner_kws={'box_width': 3})
         
         ax.set_xlabel('Apo vs Holo Similarity', labelpad=4)
         ax.set_ylabel('Apo vs Holo RMSD (Å)', labelpad=4)
@@ -845,40 +881,42 @@ class FigureVisualization:
         return self._save(fig, save_path)
     
     def plot_alphasaxs_recovery_barplot(self, df: pd.DataFrame, save_path: str = None) -> plt.Figure:
-        """Bar plot: AlphaSAXS recovery of apo-holo differences (percentage vs ground truth)."""
+        """Bar plot: AlphaSAXS recovery of apo-holo differences (percentage vs ground truth).
+        
+        This function expects df to have columns from model_comparisons.csv apo-holo pairs:
+        - rmsd: model apo-holo RMSD
+        - saxs_l1: model apo-holo SAXS L1
+        - rmsd_ref: reference apo-holo RMSD  
+        - saxs_l1_ref: reference apo-holo SAXS L1
+        """
         fig = plt.figure(figsize=(3.54, 3.54), dpi=600)
         
-        # Filter for AlphaSAXS only and pairs with data
-        df_alphasaxs = df[(df['type'] == 'AlphaSAXS') & df['pair_id'].notna()].copy()
+        # Filter for AlphaSAXS pairs only
+        df_alphasaxs = df[df['type'] == 'AlphaSAXS'].copy()
         
         if df_alphasaxs.empty:
             print("No AlphaSAXS apo-holo pair data found")
             return fig
         
-        # Calculate averages
-        model_means = df_alphasaxs[['rmsd_div', 'pr_div']].mean()
-        ref_means = df_alphasaxs[['ref_pr_div']].mean()
+        print(f"Using {len(df_alphasaxs)} AlphaSAXS apo-holo pairs")
         
-        # For RMSD, we need reference RMSD divergence
-        # Calculate it if not present
-        if 'ref_rmsd_div' not in df_alphasaxs.columns:
-            # Estimate from available data
-            ref_rmsd_mean = model_means['rmsd_div']  # Use model as proxy
-        else:
-            ref_rmsd_mean = df_alphasaxs['ref_rmsd_div'].mean()
+        # Calculate averages - using pre-computed comparison values
+        model_means = df_alphasaxs[['rmsd', 'saxs_l1']].mean()
+        ref_means = df_alphasaxs[['rmsd_ref', 'saxs_l1_ref']].mean()
         
-        rmsd_pct = (model_means['rmsd_div'] / ref_rmsd_mean) * 100 if ref_rmsd_mean > 0 else 0
-        saxs_pct = (model_means['pr_div'] / ref_means['ref_pr_div']) * 100 if ref_means['ref_pr_div'] > 0 else 0
+        # Calculate percentage relative to ground truth
+        rmsd_pct = (model_means['rmsd'] / ref_means['rmsd_ref']) * 100 if ref_means['rmsd_ref'] > 0 else 0
+        saxs_pct = (model_means['saxs_l1'] / ref_means['saxs_l1_ref']) * 100 if ref_means['saxs_l1_ref'] > 0 else 0
         
         plot_df = pd.DataFrame([
-            {'Metric': 'RMSD', 'Percentage': rmsd_pct, 'Absolute': model_means['rmsd_div'], 'Ref_Absolute': ref_rmsd_mean},
-            {'Metric': 'SAXS_L1', 'Percentage': saxs_pct, 'Absolute': model_means['pr_div'], 'Ref_Absolute': ref_means['ref_pr_div']}
+            {'Metric': 'RMSD', 'Percentage': rmsd_pct, 'Absolute': model_means['rmsd'], 'Ref_Absolute': ref_means['rmsd_ref']},
+            {'Metric': 'SAXS_L1', 'Percentage': saxs_pct, 'Absolute': model_means['saxs_l1'], 'Ref_Absolute': ref_means['saxs_l1_ref']}
         ])
         
         ax = sns.barplot(data=plot_df, x='Metric', y='Percentage', 
                         color='#7B68EE', alpha=0.85, edgecolor='black', linewidth=0.8)
         
-        # Annotations - place inside bars if percentage is high, outside if low
+        # Annotations - place based on bar height
         for i, (idx, row) in enumerate(plot_df.iterrows()):
             unit = " Å" if row['Metric'] == 'RMSD' else ""
             label = f"{row['Percentage']:.1f}%\n(Abs: {row['Absolute']:.2f}{unit})"
@@ -889,7 +927,7 @@ class FigureVisualization:
                 y_pos = bar.get_height() / 2
                 va = 'center'
             else:
-                y_pos = bar.get_height() + 2
+                y_pos = bar.get_height() + 3
                 va = 'bottom'
             
             ax.text(bar.get_x() + bar.get_width() / 2, y_pos,
@@ -905,7 +943,6 @@ class FigureVisualization:
         plt.axhline(100, color='#e74c3c', linestyle='--', linewidth=2, label='Ground Truth')
         plt.title('AlphaSAXS Recovery of\nApo-Holo Differences', pad=20)
         plt.ylabel('Recovery (%)')
-        plt.ylim(0, 110)  # Set y limit to prevent text overflow
         plt.legend(loc='upper right', fontsize=9)
         plt.tight_layout()
         return self._save(fig, save_path)
@@ -917,14 +954,14 @@ class FigureVisualization:
         fig = plt.figure(figsize=(3.54, 3.54), dpi=600)
         
         # Filter for AlphaSAXS pairs with valid data
-        df_plot = df[(df['type'] == 'AlphaSAXS') & df['ref_pr_div'].notna() & df['pr_div'].notna()].copy()
+        df_plot = df[(df['type'] == 'AlphaSAXS') & df['saxs_l1_ref'].notna() & df['saxs_l1'].notna()].copy()
         
         if len(df_plot) < 2:
             print("Insufficient data for correlation plot")
             return fig
         
-        x = df_plot['ref_pr_div']
-        y = df_plot['pr_div']
+        x = df_plot['saxs_l1_ref']
+        y = df_plot['saxs_l1']
         
         # Calculate Pearson correlation
         r, p_value = stats.pearsonr(x, y)
@@ -942,10 +979,172 @@ class FigureVisualization:
                verticalalignment='top', horizontalalignment='left',
                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
         
-        ax.set_xlabel('Input Apo-Holo SAXS Difference (L1 Loss)', labelpad=4)
-        ax.set_ylabel('Generated Apo vs Holo Difference (L1 Loss)', labelpad=4)
+        ax.set_xlabel('Reference Apo-Holo (L1)', labelpad=4)
+        ax.set_ylabel('Model Apo-Holo (L1)', labelpad=4)
         ax.set_title('Correlation Analysis')
         plt.tight_layout()
+        return self._save(fig, save_path)
+    
+    def get_saxs_profile_from_csv(self, df: pd.DataFrame, protein_name: str, 
+                                   comparison: str = 'out_NMR_vs_target'):
+        """
+        Extract SAXS P(r) profile from model comparisons DataFrame.
+        
+        Args:
+            df: DataFrame with SAXS profile data
+            protein_name: Name of protein (e.g., '1JFJ-3_A')
+            comparison: Comparison type to filter by
+            
+        Returns:
+            Tuple of (r_values, pr_values) or (None, None) if not found
+        """
+        import ast
+        
+        # Filter for the specific protein and comparison
+        subset = df[(df['name'] == protein_name) & (df['comparison'] == comparison)]
+        
+        if subset.empty:
+            print(f"Warning: {protein_name} not found in comparison {comparison}")
+            return None, None
+        
+        # Extract raw SAXS data
+        raw_r = subset['saxs_bins_a'].iloc[0]
+        raw_pr = subset['saxs_a'].iloc[0]
+        
+        def clean_data(val):
+            """Parse SAXS data that may be stored as string or array."""
+            if isinstance(val, str):
+                val = val.strip()
+                if ',' in val:
+                    # Comma-separated list string
+                    return np.array(ast.literal_eval(val))
+                else:
+                    # Space-separated values
+                    clean_str = val.replace('[', '').replace(']', '').replace('\n', ' ')
+                    return np.fromstring(clean_str, sep=' ')
+            # Already a list/array
+            return np.array(val)
+        
+        return clean_data(raw_r), clean_data(raw_pr)
+    
+    def plot_apo_holo_pr_comparison(self, df: pd.DataFrame, apo_id: str, holo_id: str,
+                                     save_path: str = None) -> plt.Figure:
+        """
+        Plot P(r) comparison for an apo-holo protein pair.
+        
+        Args:
+            df: DataFrame with SAXS profile data
+            apo_id: Apo protein ID (e.g., '1TJD_A')
+            holo_id: Holo protein ID (e.g., '1EEJ_B')
+            save_path: Optional custom save path
+            
+        Returns:
+            matplotlib Figure object
+        """
+        # Get P(r) profiles for both proteins
+        r_apo, pr_apo = self.get_saxs_profile_from_csv(df, apo_id)
+        r_holo, pr_holo = self.get_saxs_profile_from_csv(df, holo_id)
+        
+        if r_apo is None or r_holo is None:
+            print(f"Error: Could not load data for {apo_id} or {holo_id}")
+            return plt.figure()
+        
+        # Create figure
+        fig, ax = plt.subplots(figsize=(3.54, 3.54), dpi=600)
+        
+        # Plot both P(r) profiles
+        ax.plot(r_apo, pr_apo, color='orange', label='Apo', linewidth=2)
+        ax.plot(r_holo, pr_holo, color='green', label='Holo', linewidth=2)
+        
+        ax.set_xlabel('r (Å)', labelpad=4)
+        ax.set_ylabel('P(r)', labelpad=4)
+        ax.legend(frameon=False)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        
+        plt.tight_layout()
+        
+        if save_path is None:
+            save_path = f'pr_apo_holo_{apo_id}_vs_{holo_id}.png'
+        
+        return self._save(fig, save_path)
+    
+    def plot_pr_comparison_three_models(self, df: pd.DataFrame, protein_id: str,
+                                         save_path: str = None) -> plt.Figure:
+        """
+        Plot P(r) comparison for AlphaSAXS, OpenFold, and Reference (Ground Truth).
+        
+        Uses pre-calculated P(r) profiles from model_comparisons.csv instead of 
+        recalculating from PDB files.
+        
+        Args:
+            df: DataFrame with SAXS profile data
+            protein_id: Protein ID (e.g., '1FMF-4_A', '1EEJ_B')
+            save_path: Optional custom save path
+            
+        Returns:
+            matplotlib Figure object
+        """
+        import ast
+        
+        # Get AlphaSAXS P(r) from out_NMR_vs_target (saxs_a is AlphaSAXS, saxs_b is reference)
+        subset_nmr = df[(df['name'] == protein_id) & (df['comparison'] == 'out_NMR_vs_target')]
+        if subset_nmr.empty:
+            print(f"Error: {protein_id} not found in out_NMR_vs_target")
+            return plt.figure()
+        
+        # Get OpenFold P(r) from out_AF_vs_target (saxs_a is OpenFold, saxs_b is reference)
+        subset_af = df[(df['name'] == protein_id) & (df['comparison'] == 'out_AF_vs_target')]
+        if subset_af.empty:
+            print(f"Error: {protein_id} not found in out_AF_vs_target")
+            return plt.figure()
+        
+        def clean_data(val):
+            """Parse SAXS data that may be stored as string or array."""
+            if isinstance(val, str):
+                val = val.strip()
+                if ',' in val:
+                    return np.array(ast.literal_eval(val))
+                else:
+                    clean_str = val.replace('[', '').replace(']', '').replace('\n', ' ')
+                    return np.fromstring(clean_str, sep=' ')
+            return np.array(val)
+        
+        # Extract AlphaSAXS data (from saxs_a in NMR comparison)
+        r_alphaxs = clean_data(subset_nmr['saxs_bins_a'].iloc[0])
+        pr_alphaxs = clean_data(subset_nmr['saxs_a'].iloc[0])
+        
+        # Extract OpenFold data (from saxs_a in AF comparison)
+        r_openfold = clean_data(subset_af['saxs_bins_a'].iloc[0])
+        pr_openfold = clean_data(subset_af['saxs_a'].iloc[0])
+        
+        # Extract Reference data (from saxs_b in either comparison - they should be the same)
+        r_ref = clean_data(subset_nmr['saxs_bins_b'].iloc[0])
+        pr_ref = clean_data(subset_nmr['saxs_b'].iloc[0])
+        
+        # Create figure with consistent format (matching other figures)
+        fig, ax = plt.subplots(figsize=(3.35, 3.35), dpi=600)
+        
+        # Plot all three P(r) distributions with blue/orange/green colors
+        ax.plot(r_openfold, pr_openfold, label='OpenFold', linewidth=2, color='blue')
+        ax.plot(r_alphaxs, pr_alphaxs, label='AlphaSAXS', linewidth=2, color='orange')
+        ax.plot(r_ref, pr_ref, label='Ground Truth', linewidth=2, color='green')
+        
+        # Formatting (consistent with other figures)
+        ax.set_xlabel('r (Å)', labelpad=4)
+        ax.set_ylabel('P(r)', labelpad=4)
+        ax.set_title(f'{protein_id}', pad=4)
+        ax.legend(frameon=False, loc='upper right')
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.set_xlim(0,100)
+        ax.set_ylim(0,0.03)
+        
+        plt.tight_layout()
+        
+        if save_path is None:
+            save_path = f'pr_comparison_three_models_{protein_id}.png'
+        
         return self._save(fig, save_path)
     
     # --- Figure 4: Ensemble Analysis ---
@@ -969,7 +1168,7 @@ class FigureVisualization:
                   linewidth=2, label='AlphaSAXS Baseline')
         ax.set_title('Ensemble Method Performance')
         ax.set_ylabel('Accuracy RMSD vs Ground Truth (Å)')
-        ax.set_ylim(0, max(baseline + 1, mean_df['Value'].max() + 1))
+        ax.set_ylim(0, max(baseline + 2, mean_df['Value'].max() + 2))
         
         for container in ax.containers:
             ax.bar_label(container, fmt="%.2f Å", padding=3)

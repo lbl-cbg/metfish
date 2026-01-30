@@ -10,9 +10,11 @@ PERFORMANCE NOTES:
 - Figure 4: Slower (loads ensembles with optimized vectorized RMSD)
 
 Usage:
-    # Figure 2: Model comparison (RMSD, Rg by OpenFold accuracy)
+    # Figure 2: Model comparison (RMSD, Rg, SAXS by OpenFold accuracy)
     python run_analysis.py figure2_rmsd       # Fast - single structures
     python run_analysis.py figure2_rg         # Fast - single structures
+    python run_analysis.py figure2_saxs       # Fast - single structures
+    python run_analysis.py figure2_metrics_barplot  # Fast - bar plot
     
     # Figure 3: P(r) divergence analysis
     python run_analysis.py figure3_pr         # Fast - single structures
@@ -26,6 +28,7 @@ Usage:
     # Quick replot (instant - from existing CSV files)
     python run_analysis.py replot_figure2_rmsd
     python run_analysis.py replot_figure2_rg
+    python run_analysis.py replot_figure2_saxs
     python run_analysis.py replot_figure3_pr
     python run_analysis.py replot_figure4_barplot
     python run_analysis.py replot_figure4_rg
@@ -34,6 +37,11 @@ Usage:
     
     # Apo-holo pair analysis
     python run_analysis.py apo_holo_rmsd <apo_id> <holo_id>
+    python run_analysis.py apo_holo_pr    # Figure 2/3: P(r) comparisons from CSV
+    python run_analysis.py three_model_pr # Untitled1: AlphaSAXS vs OpenFold vs Truth
+    
+    # Notebook figures
+    python run_analysis.py notebook_pr_comparison  # Generate all P(r) comparison plots
 """
 
 import os
@@ -104,6 +112,12 @@ def replot_figure2_rg(csv_path: Path = None, output_dir: Path = OUTPUT_DIR) -> P
     output_path = output_dir / 'figure2_rg.png'
     print(f"Replotted: {output_path}")
     return output_path
+
+
+def replot_figure2_saxs(output_dir: Path = OUTPUT_DIR) -> Path:
+    """Replot Figure 2 SAXS from model_comparisons.csv."""
+    # This function loads from source CSV since it needs saxs_l1 column
+    return generate_figure2_saxs(output_dir, use_cached=False)
 
 
 def replot_figure2_metrics_barplot(csv_path: Path = None, output_dir: Path = OUTPUT_DIR) -> Path:
@@ -380,6 +394,54 @@ def generate_figure2_rg(output_dir: Path = OUTPUT_DIR,
     return output_path
 
 
+def generate_figure2_saxs(output_dir: Path = OUTPUT_DIR,
+                          use_cached: bool = True) -> Path:
+    """
+    Generate Figure 2 SAXS violin plot: SAXS P(r) L1 Loss by OpenFold accuracy category.
+    
+    Requires figure2_metrics.csv with saxs_l1 column from model_comparisons.csv.
+    """
+    output_dir = Path(output_dir)
+    dm = DataManager(output_dir)
+    viz = FigureVisualization(output_dir)
+    
+    # Load from model_comparisons.csv (has saxs_l1 column)
+    csv_path = '/global/cfs/cdirs/m4704/100125_Nature_Com_data/results/model_comparisons.csv'
+    print(f"Loading data from {csv_path}...")
+    result = pd.read_csv(csv_path)
+    
+    # Extract base protein list with types (same logic as figure2)
+    AF_result = result[(result['type_a']=='out_AF')&(result['type_b']=='target')][['name','rmsd','saxs_l1']]
+    AF_result.rename(columns={'name': 'pdb_id'}, inplace=True)
+    AF_result['type'] = 'OpenFold'
+    
+    NMR_result = result[(result['type_a']=='out_NMR')&(result['type_b']=='target')][['name','rmsd','saxs_l1']]
+    NMR_result.rename(columns={'name': 'pdb_id'}, inplace=True)
+    NMR_result['type'] = 'AlphaSAXS'
+    
+    df = pd.concat([NMR_result, AF_result])
+    
+    # Add OpenFold accuracy categories
+    of_rmsd = df.query('type == "OpenFold"')[['pdb_id', 'rmsd']].rename(columns={'rmsd': 'of_rmsd'})
+    df = df.merge(of_rmsd, on='pdb_id', how='left')
+    conditions = [df['of_rmsd'] < 1, df['of_rmsd'] <= 5, df['of_rmsd'] > 5]
+    df['OpenFold Accuracy'] = np.select(conditions, ['High', 'Medium', 'Low'], 'Unknown')
+    df['OpenFold Accuracy'] = pd.Categorical(
+        df['OpenFold Accuracy'],
+        categories=['Low', 'Medium', 'High'],
+        ordered=True
+    )
+    
+    print(f"Loaded {len(df)} entries ({len(AF_result)} OpenFold, {len(NMR_result)} AlphaSAXS)")
+    
+    fig = viz.plot_saxs_comparison(df, save_path='figure2_saxs.png')
+    plt.close(fig)
+    
+    output_path = output_dir / 'figure2_saxs.png'
+    print(f"Generated: {output_path}")
+    return output_path
+
+
 def generate_figure2_metrics_barplot(output_dir: Path = OUTPUT_DIR,
                                       use_cached: bool = True) -> Path:
     """
@@ -430,7 +492,8 @@ def generate_figure3_pr(output_dir: Path = OUTPUT_DIR,
     """
     Generate Figure 3: P(r) divergence between apo-holo pairs.
     
-    Adds apo-holo similarity categories based on P(r) divergence.
+    Uses pre-computed apo-holo pair comparisons from model_comparisons.csv.
+    Categorizes by apo-holo similarity based on reference P(r) divergence.
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -438,23 +501,56 @@ def generate_figure3_pr(output_dir: Path = OUTPUT_DIR,
     dm = DataManager(output_dir)
     viz = FigureVisualization(output_dir)
     
-    # Load or create base metrics
-    df = dm.load_csv('figure2_metrics.csv')
-    if df is None:
-        print("Creating figure2 metrics first...")
-        generate_figure2_rmsd(output_dir, use_cached=False)
-        df = dm.load_csv('figure2_metrics.csv')
+    # Load from raw data source
+    csv_path = '/global/cfs/cdirs/m4704/100125_Nature_Com_data/results/model_comparisons.csv'
+    print(f"Loading apo-holo pairs from {csv_path}...")
+    result = pd.read_csv(csv_path)
     
-    # Check if PR divergence already added
-    if 'ref_pr_div' not in df.columns:
-        print("Adding P(r) divergence...")
-        analyzer = ApoHoloPairAnalyzer()
-        df = analyzer.add_pr_divergence(df)
-        dm.save_csv(df, 'figure3_pr_divergence.csv')
-    else:
-        dm.save_csv(df, 'figure3_pr_divergence.csv')
+    # Load pair dictionary
+    pair_csv_path = '/global/cfs/cdirs/m4704/100125_Nature_Com_data/Apo_holo_data/Table_rmsd_Apo_vs_Holo.csv'
+    pair_csv = pd.read_csv(pair_csv_path, sep=';')
+    apo_ids = pair_csv['Apo_ID'].tolist()
     
-    # Create violin plot: P(r) Div by apo_holo_similarity
+    # Get apo-holo pairs for both models
+    AF_result_pair = result[(result['type_a']=='out_AF')&(result['type_b']=='out_alt_AF')]
+    AF_result_pair = AF_result_pair[AF_result_pair['name'].isin(apo_ids)][['name','name_alt','rmsd','saxs_l1']]
+    
+    NMR_result_pair = result[(result['type_a']=='out_NMR')&(result['type_b']=='out_alt_NMR')]
+    NMR_result_pair = NMR_result_pair[NMR_result_pair['name'].isin(apo_ids)][['name','name_alt','rmsd','saxs_l1']]
+    
+    ref_result_pair = result[(result['type_a']=='target')&(result['type_b']=='target_alt')]
+    ref_result_pair = ref_result_pair[ref_result_pair['name'].isin(apo_ids)][['name','name_alt','rmsd','saxs_l1']]
+    
+    # Merge with reference
+    AF_result_pair = AF_result_pair.merge(ref_result_pair, on='name', suffixes=('','_ref'))
+    AF_result_pair['type'] = 'OpenFold'
+    
+    NMR_result_pair = NMR_result_pair.merge(ref_result_pair, on='name', suffixes=('','_ref'))
+    NMR_result_pair['type'] = 'AlphaSAXS'
+    
+    # Combine
+    df = pd.concat([NMR_result_pair, AF_result_pair])
+    
+    # Categorize by apo-holo similarity based on reference SAXS L1
+    conditions = [
+        (df['saxs_l1_ref'] <= 0.05),
+        (df['saxs_l1_ref'] > 0.05) & (df['saxs_l1_ref'] <= 0.1),
+        (df['saxs_l1_ref'] > 0.1)
+    ]
+    choices = ['High', 'Medium', 'Low']
+    df['apo_holo_similarity'] = np.select(conditions, choices)
+    
+    # Ensure categorical order: Low → Medium → High
+    df['apo_holo_similarity'] = pd.Categorical(
+        df['apo_holo_similarity'],
+        categories=['Low', 'Medium', 'High'],
+        ordered=True
+    )
+    
+    print(f"Loaded {len(df)} apo-holo pairs ({len(AF_result_pair)} OpenFold, {len(NMR_result_pair)} AlphaSAXS)")
+    dm.save_csv(df, 'figure3_pr_divergence.csv')
+    
+    # Create violin plot: P(r) Div (saxs_l1) by apo_holo_similarity
     fig = viz.plot_pr_divergence(df, save_path='figure3_pr.png')
     plt.close(fig)
     
@@ -498,6 +594,7 @@ def generate_figure3_recovery_barplot(output_dir: Path = OUTPUT_DIR,
     Generate Figure 3 AlphaSAXS recovery bar plot.
     
     Shows how well AlphaSAXS recovers apo-holo differences compared to ground truth.
+    Uses pre-computed apo-holo pair comparisons from model_comparisons.csv.
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -505,15 +602,34 @@ def generate_figure3_recovery_barplot(output_dir: Path = OUTPUT_DIR,
     dm = DataManager(output_dir)
     viz = FigureVisualization(output_dir)
     
-    # Load cached data
-    df = dm.load_csv('figure3_pr_divergence.csv')
-    if df is None:
-        print("Creating figure3 data first...")
-        generate_figure3_pr(output_dir, use_cached=False)
-        df = dm.load_csv('figure3_pr_divergence.csv')
+    # Load from raw data source - apo-holo pair comparisons
+    csv_path = '/global/cfs/cdirs/m4704/100125_Nature_Com_data/results/model_comparisons.csv'
+    print(f"Loading apo-holo pairs from {csv_path}...")
+    result = pd.read_csv(csv_path)
+    
+    # Load pair dictionary
+    pair_csv_path = '/global/cfs/cdirs/m4704/100125_Nature_Com_data/Apo_holo_data/Table_rmsd_Apo_vs_Holo.csv'
+    pair_csv = pd.read_csv(pair_csv_path, sep=';')
+    apo_ids = pair_csv['Apo_ID'].tolist()
+    print(f"Found {len(apo_ids)} apo-holo pairs")
+    
+    # Extract model pairs (out_NMR vs out_alt_NMR)
+    NMR_result_pair = result[(result['type_a']=='out_NMR')&(result['type_b']=='out_alt_NMR')]
+    NMR_result_pair = NMR_result_pair[NMR_result_pair['name'].isin(apo_ids)][['name','name_alt','rmsd','saxs_l1']]
+    
+    # Extract reference pairs (target vs target_alt)
+    ref_result_pair = result[(result['type_a']=='target')&(result['type_b']=='target_alt')]
+    ref_result_pair = ref_result_pair[ref_result_pair['name'].isin(apo_ids)][['name','name_alt','rmsd','saxs_l1']]
+    
+    # Merge
+    NMR_result_pair = NMR_result_pair.merge(ref_result_pair, on='name', suffixes=('','_ref'))
+    NMR_result_pair = NMR_result_pair[['name','name_alt','rmsd','saxs_l1','rmsd_ref','saxs_l1_ref']]
+    NMR_result_pair['type'] = 'AlphaSAXS'
+    
+    print(f"Using {len(NMR_result_pair)} AlphaSAXS apo-holo pairs")
     
     # Generate recovery bar plot
-    fig = viz.plot_alphasaxs_recovery_barplot(df, save_path='figure3_recovery_barplot.png')
+    fig = viz.plot_alphasaxs_recovery_barplot(NMR_result_pair, save_path='figure3_recovery_barplot.png')
     plt.close(fig)
     
     output_path = output_dir / 'figure3_recovery_barplot.png'
@@ -548,6 +664,99 @@ def generate_figure3_correlation(output_dir: Path = OUTPUT_DIR,
     output_path = output_dir / 'figure3_correlation.png'
     print(f"Generated: {output_path}")
     return output_path
+
+
+# =============================================================================
+# Apo-Holo P(r) Comparison Plots
+# =============================================================================
+
+def generate_apo_holo_pr_plots(output_dir: Path = OUTPUT_DIR) -> list:
+    """
+    Generate apo-holo P(r) comparison plots from model_comparisons.csv.
+    
+    Plots specific protein pairs mentioned in Analysis-Copy1.ipynb:
+    - 1JFJ-3_A (apo) vs 1JFK_A (holo)
+    - 1TJD_A (apo) vs 1EEJ_B (holo)
+    
+    Parameters
+    ----------
+    output_dir : Path
+        Output directory for figures
+        
+    Returns
+    -------
+    list
+        Paths to generated PNG files
+    """
+    csv_path = '/global/cfs/cdirs/m4704/100125_Nature_Com_data/results/model_comparisons.csv'
+    
+    print("Loading model_comparisons.csv...")
+    df = pd.read_csv(csv_path)
+    
+    # Initialize visualizer
+    viz = FigureVisualization(output_dir=output_dir)
+    
+    # Define protein pairs from notebook
+    pairs = [
+        ('1JFJ-3_A', '1JFK_A'),
+        ('1TJD_A', '1EEJ_B')
+    ]
+    
+    output_paths = []
+    for apo_id, holo_id in pairs:
+        print(f"\nGenerating P(r) comparison: {apo_id} (apo) vs {holo_id} (holo)")
+        save_path = f'pr_apo_holo_{apo_id}_vs_{holo_id}.png'
+        fig = viz.plot_apo_holo_pr_comparison(df, apo_id, holo_id, save_path=save_path)
+        plt.close(fig)
+        
+        output_path = output_dir / save_path
+        print(f"Generated: {output_path}")
+        output_paths.append(output_path)
+    
+    return output_paths
+
+
+def generate_three_model_pr_plots(output_dir: Path = OUTPUT_DIR) -> list:
+    """
+    Generate three-model P(r) comparison plots from model_comparisons.csv.
+    
+    Plots AlphaSAXS vs OpenFold vs Ground Truth for proteins mentioned in Untitled1.ipynb:
+    - 1EEJ_B
+    - 1FMF-4_A
+    
+    Parameters
+    ----------
+    output_dir : Path
+        Output directory for figures
+        
+    Returns
+    -------
+    list
+        Paths to generated PNG files
+    """
+    csv_path = '/global/cfs/cdirs/m4704/100125_Nature_Com_data/results/model_comparisons.csv'
+    
+    print("Loading model_comparisons.csv...")
+    df = pd.read_csv(csv_path)
+    
+    # Initialize visualizer
+    viz = FigureVisualization(output_dir=output_dir)
+    
+    # Define proteins from Untitled1.ipynb
+    protein_ids = ['1EEJ_B', '1FMF-4_A', '1JFJ-3_A']
+    
+    output_paths = []
+    for protein_id in protein_ids:
+        print(f"\nGenerating three-model P(r) comparison: {protein_id}")
+        save_path = f'pr_comparison_three_models_{protein_id}.png'
+        fig = viz.plot_pr_comparison_three_models(df, protein_id, save_path=save_path)
+        plt.close(fig)
+        
+        output_path = output_dir / save_path
+        print(f"Generated: {output_path}")
+        output_paths.append(output_path)
+    
+    return output_paths
 
 
 # =============================================================================
@@ -776,20 +985,27 @@ COMMANDS = {
     # Figure 2
     'figure2_rmsd': generate_figure2_rmsd,
     'figure2_rg': generate_figure2_rg,
+    'figure2_saxs': generate_figure2_saxs,
     'figure2_metrics_barplot': generate_figure2_metrics_barplot,
     # Figure 3
     'figure3_pr': generate_figure3_pr,
     'figure3_rmsd': generate_figure3_rmsd,
     'figure3_recovery_barplot': generate_figure3_recovery_barplot,
     'figure3_correlation': generate_figure3_correlation,
+    # Apo-holo P(r) comparisons (Figure 2/3 notebook)
+    'apo_holo_pr': generate_apo_holo_pr_plots,
+    'three_model_pr': generate_three_model_pr_plots,
     # Figure 4
     'figure4_barplot': generate_figure4_barplot,
     'figure4_rg': generate_figure4_rg,
     'figure4_re': generate_figure4_re,
+    # Notebook Figures
+    'notebook_pr_comparison': lambda: __import__('metfish.analysis.notebook_figures', fromlist=['generate_all_pr_comparisons']).generate_all_pr_comparisons(),
     'figure4_diversity': generate_figure4_diversity,
     # Replot functions (quick, no analysis)
     'replot_figure2_rmsd': replot_figure2_rmsd,
     'replot_figure2_rg': replot_figure2_rg,
+    'replot_figure2_saxs': replot_figure2_saxs,
     'replot_figure2_metrics_barplot': replot_figure2_metrics_barplot,
     'replot_figure3_pr': replot_figure3_pr,
     'replot_figure3_rmsd': replot_figure3_rmsd,
