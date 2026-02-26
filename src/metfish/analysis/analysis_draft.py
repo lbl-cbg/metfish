@@ -1134,13 +1134,28 @@ class FigureVisualization:
         ax.set_xlabel('r (Å)', labelpad=4)
         ax.set_ylabel('P(r)', labelpad=4)
         ax.set_title(f'{protein_id}', pad=4)
-        ax.legend(frameon=False, loc='upper right')
+        
+        # Special settings for 1EEJ_B to zoom in on peak
+        if protein_id == '1EEJ_B':
+            ax.set_xlim(0, 70)
+            ax.set_ylim(0, 0.02)
+        else:
+            ax.set_xlim(0, 100)
+            ax.set_ylim(0, 0.03)
+        
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
-        ax.set_xlim(0,100)
-        ax.set_ylim(0,0.03)
         
-        plt.tight_layout()
+        # Apply tight_layout before adding legend to preserve plot box size
+        if protein_id != '1EEJ_B':
+            plt.tight_layout()
+        
+        # Special settings for 1EEJ_B to zoom in on peak
+        if protein_id == '1EEJ_B':
+            plt.tight_layout()
+            ax.legend(frameon=False, loc='upper right', bbox_to_anchor=(1.35, 1.0))
+        else:
+            ax.legend(frameon=False, loc='upper right')
         
         if save_path is None:
             save_path = f'pr_comparison_three_models_{protein_id}.png'
@@ -1170,8 +1185,11 @@ class FigureVisualization:
         ax.set_ylabel('Accuracy RMSD vs Ground Truth (Å)')
         ax.set_ylim(0, max(baseline + 2, mean_df['Value'].max() + 2))
         
-        for container in ax.containers:
-            ax.bar_label(container, fmt="%.2f Å", padding=3)
+        # Add annotations at same height for both bars
+        max_height = mean_df['Value'].max()
+        for i, value in enumerate(mean_df['Value']):
+            ax.text(i, max_height + 0.1, f"{value:.2f} Å", 
+                   ha='center', va='bottom', fontsize=10)
         
         ax.legend(loc=2)
         plt.tight_layout()
