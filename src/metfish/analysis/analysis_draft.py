@@ -1125,10 +1125,10 @@ class FigureVisualization:
         # Create figure with consistent format (matching other figures)
         fig, ax = plt.subplots(figsize=(3.35, 3.35), dpi=600)
         
-        # Plot all three P(r) distributions with blue/orange/green colors
-        ax.plot(r_openfold, pr_openfold, label='OpenFold', linewidth=2, color='blue')
-        ax.plot(r_alphaxs, pr_alphaxs, label='AlphaSAXS', linewidth=2, color='orange')
-        ax.plot(r_ref, pr_ref, label='Ground Truth', linewidth=2, color='green')
+        # Plot all three P(r) distributions (colors match structure figures)
+        ax.plot(r_ref, pr_ref, label='Ground Truth', linewidth=1.5, color='#009E73', alpha=0.7, zorder=1)
+        ax.plot(r_openfold, pr_openfold, label='OpenFold', linewidth=1.5, color='#CC79A7', alpha=0.7, zorder=2)
+        ax.plot(r_alphaxs, pr_alphaxs, label='AlphaSAXS', linewidth=1.5, color='#E69F00', alpha=0.9, zorder=3)
         
         # Formatting (consistent with other figures)
         ax.set_xlabel('r (Å)', labelpad=4)
