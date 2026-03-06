@@ -665,13 +665,61 @@ class FigureVisualization:
     def _set_style(self):
         """Set publication style - kept for compatibility but uses minimal customization."""
         plt.rcParams.update({
-            'font.size': 11,
+            'font.size': 12,
             'axes.labelsize': 12,
-            'xtick.labelsize': 11,
-            'ytick.labelsize': 11,
-            'legend.fontsize': 11,
+            'axes.titlesize': 12,
+            'xtick.labelsize': 12,
+            'ytick.labelsize': 12,
+            'legend.fontsize': 12,
             'pdf.fonttype': 42,
         })
+    
+    @staticmethod
+    def _color_legend_text(ax):
+        """Color each legend text entry to match its corresponding legend handle color (fully opaque)."""
+        legend = ax.get_legend()
+        if legend is None:
+            return
+        for text, handle in zip(legend.get_texts(), legend.legend_handles):
+            try:
+                color = handle.get_facecolor()
+                if hasattr(color, '__len__') and len(color) > 0:
+                    if hasattr(color, 'shape') and len(color.shape) > 1:
+                        color = list(color[0])  # get first color from array
+                    else:
+                        color = list(color)
+                    # Force alpha to 1.0 for text readability
+                    if len(color) == 4:
+                        color[3] = 1.0
+                text.set_color(color)
+            except Exception:
+                try:
+                    color = handle.get_color()
+                    text.set_color(color)
+                except Exception:
+                    pass
+    
+    @staticmethod
+    def _add_median_labels(ax, df, x_col, y_col, hue_col, hue_order, order, palette):
+        """Add numeric median labels above each violin plot."""
+        for i, cat in enumerate(order):
+            for j, hue_val in enumerate(hue_order):
+                subset = df[(df[x_col] == cat) & (df[hue_col] == hue_val)]
+                if subset.empty:
+                    continue
+                median_val = subset[y_col].median()
+                max_val = subset[y_col].max()
+                # Position: each category has len(hue_order) violins side by side
+                n_hues = len(hue_order)
+                offset = (j - (n_hues - 1) / 2) * 0.4 / (n_hues - 1) if n_hues > 1 else 0
+                x_pos = i + offset
+                color = palette.get(hue_val, 'black')
+                # Place label above the violin (at max value + small offset)
+                y_range = ax.get_ylim()[1] - ax.get_ylim()[0]
+                y_pos = max_val + y_range * 0.02
+                ax.text(x_pos, y_pos, f'{median_val:.2f}',
+                        ha='center', va='bottom', fontsize=10, fontweight='bold',
+                        color=color)
     
     def _save(self, fig: plt.Figure, save_path: str, dpi: int = 600):
         """Save figure to output directory."""
@@ -693,15 +741,22 @@ class FigureVisualization:
                 ordered=True
             )
         
+        hue_order = ['OpenFold', 'AlphaSAXS']
+        order = ['Low', 'Medium', 'High']
         sns.violinplot(y='rmsd', x='OpenFold Accuracy', hue='type',
-                       data=df, ax=ax, order=['Low', 'Medium', 'High'],
+                       data=df, ax=ax, order=order, hue_order=hue_order,
                        palette=self.palette, fill=True, alpha=0.3,
                        inner_kws={'box_width': 3})
+        
+        # Add median labels
+        self._add_median_labels(ax, df, 'OpenFold Accuracy', 'rmsd', 'type',
+                                hue_order, order, self.palette)
         
         ax.set_xlabel('OpenFold Accuracy', labelpad=4)
         ax.set_ylabel('RMSD (Å)', labelpad=4)
         if ax.get_legend():
             ax.get_legend().set_title(None)
+        self._color_legend_text(ax)
         
         plt.tight_layout()
         return self._save(fig, save_path)
@@ -718,15 +773,22 @@ class FigureVisualization:
                 ordered=True
             )
         
+        hue_order = ['OpenFold', 'AlphaSAXS']
+        order = ['Low', 'Medium', 'High']
         sns.violinplot(y='rg_diff_A', x='OpenFold Accuracy', hue='type',
-                       data=df, ax=ax, order=['Low', 'Medium', 'High'],
+                       data=df, ax=ax, order=order, hue_order=hue_order,
                        palette=self.palette, fill=True, alpha=0.3,
                        inner_kws={'box_width': 3})
+        
+        # Add median labels
+        self._add_median_labels(ax, df, 'OpenFold Accuracy', 'rg_diff_A', 'type',
+                                hue_order, order, self.palette)
         
         ax.set_xlabel('OpenFold Accuracy', labelpad=4)
         ax.set_ylabel('Rg Accuracy (Å)', labelpad=4)
         if ax.get_legend():
             ax.get_legend().set_title(None)
+        self._color_legend_text(ax)
         
         plt.tight_layout()
         return self._save(fig, save_path)
@@ -743,15 +805,22 @@ class FigureVisualization:
                 ordered=True
             )
         
+        hue_order = ['OpenFold', 'AlphaSAXS']
+        order = ['Low', 'Medium', 'High']
         sns.violinplot(y='saxs_l1', x='OpenFold Accuracy', hue='type',
-                       data=df, ax=ax, order=['Low', 'Medium', 'High'],
+                       data=df, ax=ax, order=order, hue_order=hue_order,
                        palette=self.palette, fill=True, alpha=0.3,
                        inner_kws={'box_width': 3})
+        
+        # Add median labels
+        self._add_median_labels(ax, df, 'OpenFold Accuracy', 'saxs_l1', 'type',
+                                hue_order, order, self.palette)
         
         ax.set_xlabel('OpenFold Accuracy', labelpad=4)
         ax.set_ylabel('SAXS P(r) L1 Loss', labelpad=4)
         if ax.get_legend():
             ax.get_legend().set_title(None)
+        self._color_legend_text(ax)
         
         plt.tight_layout()
         return self._save(fig, save_path)
@@ -813,12 +882,14 @@ class FigureVisualization:
                 ax.annotate(labels_data[i],
                             (p.get_x() + p.get_width() / 2., p.get_height()),
                             ha='center', va='bottom', color='black',
-                            xytext=(0, 5), textcoords='offset points')
+                            xytext=(0, 5), textcoords='offset points',
+                            fontsize=12)
         
         plt.xlabel('')
         plt.ylabel('Percentage of OpenFold Value')
-        plt.ylim(0, means_long['Percentage'].max() * 1.3)
+        plt.ylim(0, means_long['Percentage'].max() * 1.5)
         plt.legend(loc='upper left')
+        self._color_legend_text(ax)
         plt.tight_layout()
         return self._save(fig, save_path)
     
@@ -841,6 +912,7 @@ class FigureVisualization:
         
         sns.violinplot(y='saxs_l1', x='apo_holo_similarity', hue='type',
                        data=df_plot, ax=ax, order=['Low', 'Medium', 'High'],
+                       hue_order=['OpenFold', 'AlphaSAXS'],
                        palette=self.palette, fill=True, alpha=0.3,
                        inner_kws={'box_width': 3})
         
@@ -848,6 +920,7 @@ class FigureVisualization:
         ax.set_ylabel('P(r) Div', labelpad=4)
         if ax.get_legend():
             ax.get_legend().set_title(None)
+        self._color_legend_text(ax)
         
         plt.tight_layout()
         return self._save(fig, save_path)
@@ -869,6 +942,7 @@ class FigureVisualization:
         
         sns.violinplot(y='rmsd', x='apo_holo_similarity', hue='type',
                        data=df_plot, ax=ax, order=['Low', 'Medium', 'High'],
+                       hue_order=['OpenFold', 'AlphaSAXS'],
                        palette=self.palette, fill=True, alpha=0.3,
                        inner_kws={'box_width': 3})
         
@@ -876,6 +950,7 @@ class FigureVisualization:
         ax.set_ylabel('Apo vs Holo RMSD (Å)', labelpad=4)
         if ax.get_legend():
             ax.get_legend().set_title(None)
+        self._color_legend_text(ax)
         
         plt.tight_layout()
         return self._save(fig, save_path)
@@ -931,7 +1006,7 @@ class FigureVisualization:
                 va = 'bottom'
             
             ax.text(bar.get_x() + bar.get_width() / 2, y_pos,
-                    label, ha='center', va=va, color='black', fontsize=10)
+                    label, ha='center', va=va, color='black', fontsize=12)
         
         # X-axis labels with GT
         new_labels = []
@@ -943,7 +1018,8 @@ class FigureVisualization:
         plt.axhline(100, color='#e74c3c', linestyle='--', linewidth=2, label='Ground Truth')
         plt.title('AlphaSAXS Recovery of\nApo-Holo Differences', pad=20)
         plt.ylabel('Recovery (%)')
-        plt.legend(loc='upper right', fontsize=9)
+        plt.legend(loc='upper right', fontsize=12)
+        self._color_legend_text(plt.gca())
         plt.tight_layout()
         return self._save(fig, save_path)
     
@@ -1059,6 +1135,7 @@ class FigureVisualization:
         ax.set_xlabel('r (Å)', labelpad=4)
         ax.set_ylabel('P(r)', labelpad=4)
         ax.legend(frameon=False)
+        self._color_legend_text(ax)
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
         
@@ -1146,16 +1223,10 @@ class FigureVisualization:
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
         
-        # Apply tight_layout before adding legend to preserve plot box size
-        if protein_id != '1EEJ_B':
-            plt.tight_layout()
-        
-        # Special settings for 1EEJ_B to zoom in on peak
-        if protein_id == '1EEJ_B':
-            plt.tight_layout()
-            ax.legend(frameon=False, loc='upper right', bbox_to_anchor=(1.35, 1.0))
-        else:
-            ax.legend(frameon=False, loc='upper right')
+        # Apply tight_layout then place legend outside to avoid overlap
+        plt.tight_layout()
+        ax.legend(frameon=False, loc='upper right', bbox_to_anchor=(1.35, 1.0))
+        self._color_legend_text(ax)
         
         if save_path is None:
             save_path = f'pr_comparison_three_models_{protein_id}.png'
@@ -1189,9 +1260,10 @@ class FigureVisualization:
         max_height = mean_df['Value'].max()
         for i, value in enumerate(mean_df['Value']):
             ax.text(i, max_height + 0.1, f"{value:.2f} Å", 
-                   ha='center', va='bottom', fontsize=10)
+                   ha='center', va='bottom', fontsize=12)
         
         ax.legend(loc=2)
+        self._color_legend_text(ax)
         plt.tight_layout()
         return self._save(fig, save_path)
     
@@ -1207,8 +1279,8 @@ class FigureVisualization:
                 max(df['rg_ref'].max(), df['rg_avg'].max())]
         ax.plot(lims, lims, '--', color='#878787', linewidth=1.5, alpha=0.7, label='Identity')
         
-        ax.set_xlabel(r'$R_g$ target (nm)', fontsize=15)
-        ax.set_ylabel(r'$R_g$ ensemble (nm)', fontsize=15)
+        ax.set_xlabel(r'$R_g$ target (nm)', fontsize=12)
+        ax.set_ylabel(r'$R_g$ ensemble (nm)', fontsize=12)
         
         plt.tight_layout()
         return self._save(fig, save_path)
@@ -1225,8 +1297,8 @@ class FigureVisualization:
                 max(df['re_ref'].max(), df['re_avg'].max())]
         ax.plot(lims, lims, '--', color='#878787', linewidth=1.5, alpha=0.7, label='Identity')
         
-        ax.set_xlabel(r'$R_{ee}$ target (nm)', fontsize=15)
-        ax.set_ylabel(r'$R_{ee}$ ensemble (nm)', fontsize=15)
+        ax.set_xlabel(r'$R_{ee}$ target (nm)', fontsize=12)
+        ax.set_ylabel(r'$R_{ee}$ ensemble (nm)', fontsize=12)
         
         plt.tight_layout()
         return self._save(fig, save_path)

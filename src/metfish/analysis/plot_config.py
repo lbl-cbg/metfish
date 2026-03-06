@@ -53,12 +53,12 @@ COLORS = {
 # =============================================================================
 PLOT_PARAMS = {
     # Font settings
-    'font.size': 11,
+    'font.size': 12,
     'axes.labelsize': 12,
     'axes.titlesize': 12,
-    'xtick.labelsize': 11,
-    'ytick.labelsize': 11,
-    'legend.fontsize': 11,
+    'xtick.labelsize': 12,
+    'ytick.labelsize': 12,
+    'legend.fontsize': 12,
     
     # Font family
     'font.family': 'sans-serif',

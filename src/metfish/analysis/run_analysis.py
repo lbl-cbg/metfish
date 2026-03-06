@@ -74,84 +74,24 @@ OUTPUT_DIR = Path("./analysis_output")
 # QUICK REPLOT FUNCTIONS (from existing CSV files)
 # =============================================================================
 
-def replot_figure2_rmsd(csv_path: Path = None, output_dir: Path = OUTPUT_DIR) -> Path:
-    """Replot Figure 2 RMSD from existing CSV without re-running analysis."""
-    output_dir = Path(output_dir)
-    csv_path = csv_path or output_dir / 'figure2_metrics.csv'
-    
-    if not csv_path.exists():
-        raise FileNotFoundError(f"CSV not found: {csv_path}. Run generate_figure2_rmsd() first.")
-    
-    df = pd.read_csv(csv_path)
-    print(f"Loaded {len(df)} entries from {csv_path}")
-    
-    viz = FigureVisualization(output_dir)
-    fig = viz.plot_rmsd_comparison(df, save_path='figure2_rmsd.png')
-    plt.close(fig)
-    
-    output_path = output_dir / 'figure2_rmsd.png'
-    print(f"Replotted: {output_path}")
-    return output_path
+def replot_figure2_rmsd(output_dir: Path = OUTPUT_DIR, **kwargs) -> Path:
+    """Replot Figure 2 RMSD from model_comparisons.csv."""
+    return generate_figure2_rmsd(output_dir)
 
 
-def replot_figure2_rg(csv_path: Path = None, output_dir: Path = OUTPUT_DIR) -> Path:
-    """Replot Figure 2 Rg from existing CSV without re-running analysis."""
-    output_dir = Path(output_dir)
-    csv_path = csv_path or output_dir / 'figure2_metrics.csv'
-    
-    if not csv_path.exists():
-        raise FileNotFoundError(f"CSV not found: {csv_path}. Run generate_figure2_rg() first.")
-    
-    df = pd.read_csv(csv_path)
-    print(f"Loaded {len(df)} entries from {csv_path}")
-    
-    viz = FigureVisualization(output_dir)
-    fig = viz.plot_rg_comparison(df, save_path='figure2_rg.png')
-    plt.close(fig)
-    
-    output_path = output_dir / 'figure2_rg.png'
-    print(f"Replotted: {output_path}")
-    return output_path
+def replot_figure2_rg(output_dir: Path = OUTPUT_DIR, **kwargs) -> Path:
+    """Replot Figure 2 Rg from model_comparisons.csv."""
+    return generate_figure2_rg(output_dir)
 
 
-def replot_figure2_saxs(output_dir: Path = OUTPUT_DIR) -> Path:
+def replot_figure2_saxs(output_dir: Path = OUTPUT_DIR, **kwargs) -> Path:
     """Replot Figure 2 SAXS from model_comparisons.csv."""
-    # This function loads from source CSV since it needs saxs_l1 column
-    return generate_figure2_saxs(output_dir, use_cached=False)
+    return generate_figure2_saxs(output_dir)
 
 
-def replot_figure2_metrics_barplot(csv_path: Path = None, output_dir: Path = OUTPUT_DIR) -> Path:
-    """Replot Figure 2 metrics bar plot from model_comparisons.csv (needs saxs_l1 column)."""
-    output_dir = Path(output_dir)
-    
-    # This plot requires the full model_comparisons.csv with saxs_l1 column
-    # Not the figure2_metrics.csv which only has rmsd and rg_diff
-    csv_path = csv_path or Path('/global/cfs/cdirs/m4704/100125_Nature_Com_data/results/model_comparisons.csv')
-    
-    if not csv_path.exists():
-        raise FileNotFoundError(f"CSV not found: {csv_path}. This plot needs model_comparisons.csv with saxs_l1 column.")
-    
-    result = pd.read_csv(csv_path)
-    
-    # Filter for AF and NMR comparisons with target
-    AF_result = result[(result['type_a']=='out_AF')&(result['type_b']=='target')][['name','rmsd','saxs_l1','rg_diff']]
-    AF_result['rg_diff_A'] = AF_result['rg_diff'] * 10
-    AF_result['type'] = 'OpenFold'
-    
-    NMR_result = result[(result['type_a']=='out_NMR')&(result['type_b']=='target')][['name','rmsd','saxs_l1','rg_diff']]
-    NMR_result['rg_diff_A'] = NMR_result['rg_diff'] * 10
-    NMR_result['type'] = 'AlphaSAXS'
-    
-    df = pd.concat([AF_result, NMR_result])
-    print(f"Loaded {len(df)} entries ({len(AF_result)} AF, {len(NMR_result)} AlphaSAXS)")
-    
-    viz = FigureVisualization(output_dir)
-    fig = viz.plot_metrics_comparison_barplot(df, save_path='figure2_metrics_barplot.png')
-    plt.close(fig)
-    
-    output_path = output_dir / 'figure2_metrics_barplot.png'
-    print(f"Replotted: {output_path}")
-    return output_path
+def replot_figure2_metrics_barplot(output_dir: Path = OUTPUT_DIR, **kwargs) -> Path:
+    """Replot Figure 2 metrics bar plot from model_comparisons.csv."""
+    return generate_figure2_metrics_barplot(output_dir)
 
 
 def replot_figure3_pr(csv_path: Path = None, output_dir: Path = OUTPUT_DIR) -> Path:
@@ -322,46 +262,78 @@ def replot_figure4_diversity(output_dir: Path = OUTPUT_DIR) -> Path:
 
 
 # =============================================================================
+# FIGURE 2: Shared data loader from model_comparisons.csv
+# =============================================================================
+
+MODEL_COMPARISONS_CSV = '/global/cfs/cdirs/m4704/100125_Nature_Com_data/results/model_comparisons.csv'
+
+
+def load_figure2_data(csv_path: str = MODEL_COMPARISONS_CSV) -> pd.DataFrame:
+    """
+    Load and prepare Figure 2 data from model_comparisons.csv.
+
+    All three Figure 2 panels (RMSD, Rg, SAXS) share this single data source
+    and the same OpenFold accuracy categorisation.
+
+    Returns DataFrame with columns:
+        pdb_id, type, rmsd, rg_diff_A, saxs_l1, of_rmsd, OpenFold Accuracy
+    """
+    print(f"Loading data from {csv_path}...")
+    result = pd.read_csv(csv_path)
+
+    cols = ['name', 'rmsd', 'saxs_l1', 'rg_diff']
+
+    AF = result[(result['type_a'] == 'out_AF') & (result['type_b'] == 'target')][cols].copy()
+    AF.rename(columns={'name': 'pdb_id'}, inplace=True)
+    AF['type'] = 'OpenFold'
+
+    NMR = result[(result['type_a'] == 'out_NMR') & (result['type_b'] == 'target')][cols].copy()
+    NMR.rename(columns={'name': 'pdb_id'}, inplace=True)
+    NMR['type'] = 'AlphaSAXS'
+
+    df = pd.concat([NMR, AF], ignore_index=True)
+
+    # rg_diff is in nm -> convert to Angstroms (absolute value to avoid cancellation)
+    df['rg_diff_A'] = df['rg_diff'].abs() * 10
+
+    # Add OpenFold accuracy categories (based on OpenFold RMSD vs target)
+    of_rmsd = df.query('type == "OpenFold"')[['pdb_id', 'rmsd']].rename(
+        columns={'rmsd': 'of_rmsd'})
+    df = df.merge(of_rmsd, on='pdb_id', how='left')
+
+    conditions = [df['of_rmsd'] < 1, df['of_rmsd'] <= 5, df['of_rmsd'] > 5]
+    df['OpenFold Accuracy'] = np.select(conditions, ['High', 'Medium', 'Low'], 'Unknown')
+    df['OpenFold Accuracy'] = pd.Categorical(
+        df['OpenFold Accuracy'],
+        categories=['Low', 'Medium', 'High'],
+        ordered=True,
+    )
+
+    print(f"  {len(df)} entries  "
+          f"({len(NMR)} AlphaSAXS, {len(AF)} OpenFold, "
+          f"{df['pdb_id'].nunique()} proteins)")
+    return df
+
+
+# =============================================================================
 # FIGURE 2a: RMSD Comparison by OpenFold Accuracy
 # =============================================================================
 
-def generate_figure2_rmsd(output_dir: Path = OUTPUT_DIR,
-                           pdb_ids: list = None,
-                           use_cached: bool = True) -> Path:
+def generate_figure2_rmsd(output_dir: Path = OUTPUT_DIR, **kwargs) -> Path:
     """
     Generate Figure 2 RMSD violin plot: RMSD by OpenFold accuracy category.
-    
-    Compares AlphaSAXS vs OpenFold performance grouped by OpenFold accuracy.
+
+    Data source: model_comparisons.csv (same as Rg and SAXS).
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    
-    dm = DataManager(output_dir)
     viz = FigureVisualization(output_dir)
-    
-    # Try cached
-    df = None
-    if use_cached:
-        df = dm.load_csv('figure2_metrics.csv')
-        if df is not None:
-            print(f"Loaded cached data: {len(df)} entries")
-    
-    # Generate if no cache
-    if df is None or df.empty:
-        analyzer = ApoHoloPairAnalyzer()
-        
-        if pdb_ids is None:
-            pdb_ids = analyzer.get_pdb_list()
-        
-        print(f"Calculating metrics for {len(pdb_ids)} proteins...")
-        df = analyzer.calculate_metrics(pdb_ids)
-        df = analyzer.add_openfold_accuracy(df)
-        dm.save_csv(df, 'figure2_metrics.csv')
-    
-    # Generate figure
+
+    df = load_figure2_data()
+
     fig = viz.plot_rmsd_comparison(df, save_path='figure2_rmsd.png')
     plt.close(fig)
-    
+
     output_path = output_dir / 'figure2_rmsd.png'
     print(f"Generated: {output_path}")
     return output_path
@@ -371,111 +343,64 @@ def generate_figure2_rmsd(output_dir: Path = OUTPUT_DIR,
 # FIGURE 2b: Rg Comparison by OpenFold Accuracy
 # =============================================================================
 
-def generate_figure2_rg(output_dir: Path = OUTPUT_DIR,
-                         use_cached: bool = True) -> Path:
+def generate_figure2_rg(output_dir: Path = OUTPUT_DIR, **kwargs) -> Path:
     """
     Generate Figure 2 Rg violin plot: Rg accuracy by OpenFold accuracy category.
-    
-    Requires figure2_metrics.csv (run generate_figure2_rmsd first).
+
+    Data source: model_comparisons.csv (same as RMSD and SAXS).
     """
     output_dir = Path(output_dir)
-    dm = DataManager(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
     viz = FigureVisualization(output_dir)
-    
-    df = dm.load_csv('figure2_metrics.csv')
-    if df is None:
-        raise FileNotFoundError("Run generate_figure2_rmsd first to create figure2_metrics.csv")
-    
+
+    df = load_figure2_data()
+
     fig = viz.plot_rg_comparison(df, save_path='figure2_rg.png')
     plt.close(fig)
-    
+
     output_path = output_dir / 'figure2_rg.png'
     print(f"Generated: {output_path}")
     return output_path
 
 
-def generate_figure2_saxs(output_dir: Path = OUTPUT_DIR,
-                          use_cached: bool = True) -> Path:
+# =============================================================================
+# FIGURE 2c: SAXS P(r) L1 Loss by OpenFold Accuracy
+# =============================================================================
+
+def generate_figure2_saxs(output_dir: Path = OUTPUT_DIR, **kwargs) -> Path:
     """
-    Generate Figure 2 SAXS violin plot: SAXS P(r) L1 Loss by OpenFold accuracy category.
-    
-    Requires figure2_metrics.csv with saxs_l1 column from model_comparisons.csv.
+    Generate Figure 2 SAXS violin plot: SAXS P(r) L1 Loss by OpenFold accuracy.
+
+    Data source: model_comparisons.csv (same as RMSD and Rg).
     """
     output_dir = Path(output_dir)
-    dm = DataManager(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
     viz = FigureVisualization(output_dir)
-    
-    # Load from model_comparisons.csv (has saxs_l1 column)
-    csv_path = '/global/cfs/cdirs/m4704/100125_Nature_Com_data/results/model_comparisons.csv'
-    print(f"Loading data from {csv_path}...")
-    result = pd.read_csv(csv_path)
-    
-    # Extract base protein list with types (same logic as figure2)
-    AF_result = result[(result['type_a']=='out_AF')&(result['type_b']=='target')][['name','rmsd','saxs_l1']]
-    AF_result.rename(columns={'name': 'pdb_id'}, inplace=True)
-    AF_result['type'] = 'OpenFold'
-    
-    NMR_result = result[(result['type_a']=='out_NMR')&(result['type_b']=='target')][['name','rmsd','saxs_l1']]
-    NMR_result.rename(columns={'name': 'pdb_id'}, inplace=True)
-    NMR_result['type'] = 'AlphaSAXS'
-    
-    df = pd.concat([NMR_result, AF_result])
-    
-    # Add OpenFold accuracy categories
-    of_rmsd = df.query('type == "OpenFold"')[['pdb_id', 'rmsd']].rename(columns={'rmsd': 'of_rmsd'})
-    df = df.merge(of_rmsd, on='pdb_id', how='left')
-    conditions = [df['of_rmsd'] < 1, df['of_rmsd'] <= 5, df['of_rmsd'] > 5]
-    df['OpenFold Accuracy'] = np.select(conditions, ['High', 'Medium', 'Low'], 'Unknown')
-    df['OpenFold Accuracy'] = pd.Categorical(
-        df['OpenFold Accuracy'],
-        categories=['Low', 'Medium', 'High'],
-        ordered=True
-    )
-    
-    print(f"Loaded {len(df)} entries ({len(AF_result)} OpenFold, {len(NMR_result)} AlphaSAXS)")
-    
+
+    df = load_figure2_data()
+
     fig = viz.plot_saxs_comparison(df, save_path='figure2_saxs.png')
     plt.close(fig)
-    
+
     output_path = output_dir / 'figure2_saxs.png'
     print(f"Generated: {output_path}")
     return output_path
 
 
-def generate_figure2_metrics_barplot(output_dir: Path = OUTPUT_DIR,
-                                      use_cached: bool = True) -> Path:
+def generate_figure2_metrics_barplot(output_dir: Path = OUTPUT_DIR, **kwargs) -> Path:
     """
     Generate Figure 2 metrics comparison bar plot: Comparison of all metrics as percentage.
     
     Shows RMSD, SAXS L1 Loss, and Rg Diff comparing AlphaSAXS (NMR) vs OpenFold.
-    Loads data from pre-computed model_comparisons.csv.
+    Data source: model_comparisons.csv (shared with other Figure 2 panels).
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    
-    dm = DataManager(output_dir)
     viz = FigureVisualization(output_dir)
-    
-    # Load from pre-computed CSV
-    csv_path = '/global/cfs/cdirs/m4704/100125_Nature_Com_data/results/model_comparisons.csv'
-    print(f"Loading pre-computed metrics from {csv_path}...")
-    result = pd.read_csv(csv_path)
-    
-    # Filter for AF and NMR comparisons with target
-    AF_result = result[(result['type_a']=='out_AF')&(result['type_b']=='target')][['name','rmsd','saxs_l1','rg_diff']]
-    AF_result['rg_diff_A'] = AF_result['rg_diff'] * 10
-    AF_result['type'] = 'OpenFold'
-    
-    NMR_result = result[(result['type_a']=='out_NMR')&(result['type_b']=='target')][['name','rmsd','saxs_l1','rg_diff']]
-    NMR_result['rg_diff_A'] = NMR_result['rg_diff'] * 10
-    NMR_result['type'] = 'AlphaSAXS'
-    
-    # Combine
-    df_plot = pd.concat([AF_result, NMR_result])
-    print(f"Loaded {len(df_plot)} entries ({len(AF_result)} AF, {len(NMR_result)} AlphaSAXS)")
-    
-    # Generate figure
-    fig = viz.plot_metrics_comparison_barplot(df_plot, save_path='figure2_metrics_barplot.png')
+
+    df = load_figure2_data()
+
+    fig = viz.plot_metrics_comparison_barplot(df, save_path='figure2_metrics_barplot.png')
     plt.close(fig)
     
     output_path = output_dir / 'figure2_metrics_barplot.png'
