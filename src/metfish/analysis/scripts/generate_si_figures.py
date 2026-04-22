@@ -205,7 +205,11 @@ def load_apo_holo_pairs(mc_df):
 
 
 def _prepare_protein(pid, mc_df):
-    """Load, align, and return drawing data for one protein (or None)."""
+    """Load, align, and return drawing data for one protein (or None).
+    
+    RMSD values are read from model_comparisons.csv (same source as Figure 2)
+    rather than recomputed, ensuring consistency across all figures.
+    """
     pdb_ref = DIR_REF / "{}.pdb".format(pid)
     pdb_af  = DIR_AF  / "{}.pdb".format(pid)
     pdb_nmr = DIR_NMR / "{}.pdb".format(pid)
@@ -220,13 +224,19 @@ def _prepare_protein(pid, mc_df):
         print("    SKIP {} - {}".format(pid, e))
         return None
 
+    # Look up RMSD from model_comparisons.csv
+    af_row = mc_df[(mc_df['name'] == pid) & (mc_df['type_a'] == 'out_AF') & (mc_df['type_b'] == 'target')]
+    nmr_row = mc_df[(mc_df['name'] == pid) & (mc_df['type_a'] == 'out_NMR') & (mc_df['type_b'] == 'target')]
+    rmsd_af = af_row['rmsd'].iloc[0] if not af_row.empty else None
+    rmsd_nmr = nmr_row['rmsd'].iloc[0] if not nmr_row.empty else None
+
     ref = _get_ca_coords(pdb_ref)
     af  = _get_ca_coords(pdb_af)
     nmr = _get_ca_coords(pdb_nmr)
 
     ref_c = _center_coords(ref)
-    af_a,  rmsd_af  = _align_to_reference(ref, af)
-    nmr_a, rmsd_nmr = _align_to_reference(ref, nmr)
+    af_a,  _ = _align_to_reference(ref, af)
+    nmr_a, _ = _align_to_reference(ref, nmr)
     elev, azim = _compute_elev_azim(ref_c)
 
     return dict(ref=ref, af=af_a, nmr=nmr_a,

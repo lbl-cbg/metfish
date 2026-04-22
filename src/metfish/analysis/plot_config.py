@@ -29,8 +29,8 @@ FIGURE_SIZES = {
 # =============================================================================
 COLORS = {
     # Model colors
-    'alphaSAXS': '#7B68EE',      # Purple - AlphaSAXS predictions
-    'openfold': '#48A9A6',       # Teal - OpenFold predictions  
+    'alphaSAXS': '#E69F00',      # Yellow-orange - AlphaSAXS predictions
+    'openfold': '#CC79A7',       # Pink-purple - OpenFold predictions  
     'ground_truth': '#2ecc71',   # Green - Reference/ground truth
     
     # Apo-holo colors
@@ -62,7 +62,7 @@ PLOT_PARAMS = {
     
     # Font family
     'font.family': 'sans-serif',
-    'font.sans-serif': ['Arial', 'Helvetica', 'DejaVu Sans', 'Liberation Sans', 'sans-serif'],
+    'font.sans-serif': ['DejaVu Sans'],
     
     # PDF settings (for editable text in PDFs)
     'pdf.fonttype': 42,

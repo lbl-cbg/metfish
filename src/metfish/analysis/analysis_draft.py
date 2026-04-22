@@ -28,6 +28,7 @@ from scipy.cluster.hierarchy import dendrogram, linkage
 from scipy.spatial.distance import pdist
 
 from metfish.utils import get_Pr
+from metfish.analysis.plot_config import apply_plot_style, COLORS, FIGURE_SIZES, PLOT_PARAMS
 
 
 # =============================================================================
@@ -658,21 +659,13 @@ class FigureVisualization:
     def __init__(self, output_dir: Path = None):
         self.output_dir = Path(output_dir) if output_dir else Path(".")
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        # Professional purple/teal color scheme
-        self.palette = {'AlphaSAXS': '#7B68EE', 'OpenFold': '#48A9A6', 'NMR': '#7B68EE'}
+        # Color scheme matching PR comparison plots (Nature Comm palette)
+        self.palette = {'AlphaSAXS': '#E69F00', 'OpenFold': '#CC79A7', 'NMR': '#E69F00'}
         self._set_style()
     
     def _set_style(self):
-        """Set publication style - kept for compatibility but uses minimal customization."""
-        plt.rcParams.update({
-            'font.size': 12,
-            'axes.labelsize': 12,
-            'axes.titlesize': 12,
-            'xtick.labelsize': 12,
-            'ytick.labelsize': 12,
-            'legend.fontsize': 12,
-            'pdf.fonttype': 42,
-        })
+        """Set publication style using centralized plot_config."""
+        apply_plot_style()
     
     @staticmethod
     def _color_legend_text(ax):
@@ -785,7 +778,7 @@ class FigureVisualization:
                                 hue_order, order, self.palette)
         
         ax.set_xlabel('OpenFold Accuracy', labelpad=4)
-        ax.set_ylabel('Rg Accuracy (Å)', labelpad=4)
+        ax.set_ylabel(r'$R_g$ Accuracy (Å)', labelpad=4)
         if ax.get_legend():
             ax.get_legend().set_title(None)
         self._color_legend_text(ax)
@@ -831,7 +824,7 @@ class FigureVisualization:
         fig = plt.figure(figsize=(7.08, 4), dpi=600)
         
         metrics = ['rmsd', 'saxs_l1', 'rg_diff_A']
-        metric_labels = {'rmsd': 'RMSD vs Truth', 'saxs_l1': 'SAXS L1 Loss', 'rg_diff_A': 'Rg Diff vs Truth'}
+        metric_labels = {'rmsd': 'RMSD vs Truth', 'saxs_l1': 'SAXS L1 Loss', 'rg_diff_A': '$R_g$ Diff vs Truth'}
         units = {'rmsd': 'Å', 'saxs_l1': '', 'rg_diff_A': 'Å'}
         
         # Calculate means by type
@@ -854,7 +847,7 @@ class FigureVisualization:
         
         # Plot
         hue_order = ['OpenFold', 'AlphaSAXS']
-        x_order = ['RMSD vs Truth', 'SAXS L1 Loss', 'Rg Diff vs Truth']
+        x_order = ['RMSD vs Truth', 'SAXS L1 Loss', '$R_g$ Diff vs Truth']
         
         ax = sns.barplot(data=means_long, x='Metric_Label', y='Percentage', hue='type',
                          hue_order=hue_order, order=x_order,
@@ -1016,8 +1009,8 @@ class FigureVisualization:
         ax.set_xticklabels(new_labels)
         
         plt.axhline(100, color='#e74c3c', linestyle='--', linewidth=2, label='Ground Truth')
-        plt.title('AlphaSAXS Recovery of\nApo-Holo Differences', pad=20)
-        plt.ylabel('Recovery (%)')
+        plt.title('Apo-Holo Difference Captured\nby AlphaSAXS', pad=20)
+        plt.ylabel('% of Ground Truth')
         plt.legend(loc='upper right', fontsize=12)
         self._color_legend_text(plt.gca())
         plt.tight_layout()
@@ -1055,14 +1048,17 @@ class FigureVisualization:
                verticalalignment='top', horizontalalignment='left',
                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
         
-        ax.set_xlabel('Reference Apo-Holo (L1)', labelpad=4)
-        ax.set_ylabel('Model Apo-Holo (L1)', labelpad=4)
+        ax.set_xlabel('Ground Truth Apo-Holo (L1)')
+        ax.set_ylabel('Model Apo-Holo (L1)')
         ax.set_title('Correlation Analysis')
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
         plt.tight_layout()
         return self._save(fig, save_path)
     
     def get_saxs_profile_from_csv(self, df: pd.DataFrame, protein_name: str, 
-                                   comparison: str = 'out_NMR_vs_target'):
+                                   comparison: str = 'out_NMR_vs_target',
+                                   side: str = 'a'):
         """
         Extract SAXS P(r) profile from model comparisons DataFrame.
         
@@ -1083,9 +1079,9 @@ class FigureVisualization:
             print(f"Warning: {protein_name} not found in comparison {comparison}")
             return None, None
         
-        # Extract raw SAXS data
-        raw_r = subset['saxs_bins_a'].iloc[0]
-        raw_pr = subset['saxs_a'].iloc[0]
+        # Extract raw SAXS data ('a' = predicted, 'b' = ground truth)
+        raw_r = subset[f'saxs_bins_{side}'].iloc[0]
+        raw_pr = subset[f'saxs_{side}'].iloc[0]
         
         def clean_data(val):
             """Parse SAXS data that may be stored as string or array."""
@@ -1117,9 +1113,9 @@ class FigureVisualization:
         Returns:
             matplotlib Figure object
         """
-        # Get P(r) profiles for both proteins
-        r_apo, pr_apo = self.get_saxs_profile_from_csv(df, apo_id)
-        r_holo, pr_holo = self.get_saxs_profile_from_csv(df, holo_id)
+        # Get P(r) profiles for both proteins (side='b' = ground truth target)
+        r_apo, pr_apo = self.get_saxs_profile_from_csv(df, apo_id, side='b')
+        r_holo, pr_holo = self.get_saxs_profile_from_csv(df, holo_id, side='b')
         
         if r_apo is None or r_holo is None:
             print(f"Error: Could not load data for {apo_id} or {holo_id}")
@@ -1129,16 +1125,17 @@ class FigureVisualization:
         fig, ax = plt.subplots(figsize=(3.54, 3.54), dpi=600)
         
         # Plot both P(r) profiles
-        ax.plot(r_apo, pr_apo, color='orange', label='Apo', linewidth=2)
-        ax.plot(r_holo, pr_holo, color='green', label='Holo', linewidth=2)
+        ax.plot(r_apo, pr_apo, color='orange', label='Apo\n(ground truth)', linewidth=2)
+        ax.plot(r_holo, pr_holo, color='green', label='Holo\n(ground truth)', linewidth=2)
         
         ax.set_xlabel('r (Å)', labelpad=4)
         ax.set_ylabel('P(r)', labelpad=4)
-        ax.legend(frameon=False)
+        leg = ax.legend(frameon=False, loc='upper left', bbox_to_anchor=(0.55, 1.02),
+                        borderaxespad=0, fontsize=10)
         self._color_legend_text(ax)
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
-        
+
         plt.tight_layout()
         
         if save_path is None:
@@ -1253,7 +1250,7 @@ class FigureVisualization:
         ax.axhline(baseline, linestyle='--', color='#e74c3c', 
                   linewidth=2, label='AlphaSAXS Baseline')
         ax.set_title('Ensemble Method Performance')
-        ax.set_ylabel('Accuracy RMSD vs Ground Truth (Å)')
+        ax.set_ylabel('AS-ensemble RMSD\nvs Ground Truth (Å)')
         ax.set_ylim(0, max(baseline + 2, mean_df['Value'].max() + 2))
         
         # Add annotations at same height for both bars
@@ -1268,41 +1265,113 @@ class FigureVisualization:
         return self._save(fig, save_path)
     
     def plot_rg_ensemble(self, df: pd.DataFrame, save_path: str = None) -> plt.Figure:
-        """Scatter plot: Ensemble Rg vs Reference Rg."""
+        """Scatter plot: Ensemble average Rg vs Reference Rg."""
         fig, ax = plt.subplots(figsize=(3.54, 3.54), dpi=600)
         
         ax.scatter(df['rg_ref'], df['rg_avg'], 
-                  s=50, alpha=0.6, color='#48A9A6',
+                  s=50, alpha=0.6, color='#7B68EE',
                   edgecolor='white', linewidth=0.5)
         
         lims = [min(df['rg_ref'].min(), df['rg_avg'].min()),
                 max(df['rg_ref'].max(), df['rg_avg'].max())]
         ax.plot(lims, lims, '--', color='#878787', linewidth=1.5, alpha=0.7, label='Identity')
         
-        ax.set_xlabel(r'$R_g$ target (nm)', fontsize=12)
-        ax.set_ylabel(r'$R_g$ ensemble (nm)', fontsize=12)
+        ax.set_xlabel(r'Ground Truth $R_g$ (nm)', fontsize=12)
+        ax.set_ylabel(r'Average AS-ensemble $R_g$ (nm)', fontsize=12)
         
         plt.tight_layout()
         return self._save(fig, save_path)
     
     def plot_re_ensemble(self, df: pd.DataFrame, save_path: str = None) -> plt.Figure:
-        """Scatter plot: Ensemble Re vs Reference Re."""
+        """Scatter plot: Ensemble average Re vs Reference Re."""
         fig, ax = plt.subplots(figsize=(3.54, 3.54), dpi=600)
         
         ax.scatter(df['re_ref'], df['re_avg'], 
-                  s=50, alpha=0.6, color='#48A9A6',
+                  s=50, alpha=0.6, color='#7B68EE',
                   edgecolor='white', linewidth=0.5)
         
         lims = [min(df['re_ref'].min(), df['re_avg'].min()),
                 max(df['re_ref'].max(), df['re_avg'].max())]
         ax.plot(lims, lims, '--', color='#878787', linewidth=1.5, alpha=0.7, label='Identity')
         
-        ax.set_xlabel(r'$R_{ee}$ target (nm)', fontsize=12)
-        ax.set_ylabel(r'$R_{ee}$ ensemble (nm)', fontsize=12)
+        ax.set_xlabel(r'Ground Truth $R_{ee}$ (nm)', fontsize=12)
+        ax.set_ylabel(r'Average AS-ensemble $R_{ee}$ (nm)', fontsize=12)
+        
+        plt.tight_layout()
+        return self._save(fig, save_path)
+
+    def plot_rg_best(self, df: pd.DataFrame, save_path: str = None) -> plt.Figure:
+        """Scatter plot: Best conformation Rg vs Reference Rg."""
+        fig, ax = plt.subplots(figsize=(3.54, 3.54), dpi=600)
+        
+        ax.scatter(df['rg_ref'], df['rg_best'],
+                  s=50, alpha=0.6, color='#7B68EE',
+                  edgecolor='white', linewidth=0.5)
+        
+        lims = [min(df['rg_ref'].min(), df['rg_best'].min()),
+                max(df['rg_ref'].max(), df['rg_best'].max())]
+        ax.plot(lims, lims, '--', color='#878787', linewidth=1.5, alpha=0.7)
+        
+        ax.set_xlabel(r'Ground Truth $R_g$ (nm)', fontsize=12)
+        ax.set_ylabel(r'Best AS-ensemble $R_g$ (nm)', fontsize=12)
+        
+        plt.tight_layout()
+        return self._save(fig, save_path)
+
+    def plot_re_best(self, df: pd.DataFrame, save_path: str = None) -> plt.Figure:
+        """Scatter plot: Best conformation Re vs Reference Re."""
+        fig, ax = plt.subplots(figsize=(3.54, 3.54), dpi=600)
+        
+        ax.scatter(df['re_ref'], df['re_best'],
+                  s=50, alpha=0.6, color='#7B68EE',
+                  edgecolor='white', linewidth=0.5)
+        
+        lims = [min(df['re_ref'].min(), df['re_best'].min()),
+                max(df['re_ref'].max(), df['re_best'].max())]
+        ax.plot(lims, lims, '--', color='#878787', linewidth=1.5, alpha=0.7)
+        
+        ax.set_xlabel(r'Ground Truth $R_{ee}$ (nm)', fontsize=12)
+        ax.set_ylabel(r'Best AS-ensemble $R_{ee}$ (nm)', fontsize=12)
         
         plt.tight_layout()
         return self._save(fig, save_path)
     
+    def plot_ss_scatter(self, df: pd.DataFrame, ss_type: str = 'helix',
+                        mode: str = 'avg', save_path: str = None) -> plt.Figure:
+        """
+        Single-panel scatter: ground truth vs ensemble secondary structure propensity.
+
+        Parameters
+        ----------
+        ss_type : 'helix' or 'beta'
+        mode    : 'avg' or 'best'
+        """
+        ref_col = f'{ss_type}_ref'
+        y_col   = f'{ss_type}_{mode}'
+        label   = 'α-Helix' if ss_type == 'helix' else 'β-Sheet'
+        y_prefix = 'Average' if mode == 'avg' else 'Best'
+        y_label = f'{y_prefix} AS-ensemble'
+
+        fig, ax = plt.subplots(figsize=(3.54, 3.54), dpi=600)
+
+        ax.scatter(df[ref_col], df[y_col],
+                   s=50, alpha=0.6, color='#7B68EE',
+                   edgecolor='white', linewidth=0.5)
+
+        lims = [min(df[ref_col].min(), df[y_col].min()) - 0.02,
+                max(df[ref_col].max(), df[y_col].max()) + 0.02]
+        ax.plot(lims, lims, '--', color='#878787', linewidth=1.5, alpha=0.7)
+        ax.set_xlim(lims)
+        ax.set_ylim(lims)
+
+        ax.set_xlabel(f'Ground Truth', fontsize=12)
+        ax.set_ylabel(y_label, fontsize=12)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+
+        plt.tight_layout()
+        return self._save(fig, save_path)
+
     def plot_diversity_scatter(self, df: pd.DataFrame, save_path: str = None) -> plt.Figure:
         """Scatter plot: Ensemble diversity vs accuracy."""
         fig, ax = plt.subplots(figsize=(3.54, 3.54), dpi=600)
@@ -1313,8 +1382,8 @@ class FigureVisualization:
                         edgecolor='white', linewidth=0.5,
                         legend=None, ax=ax)
         
-        ax.set_xlabel('Average RMSD (Å)')
-        ax.set_ylabel('Ensemble Diversity (Å)')
+        ax.set_xlabel('Mean RMSD to Ground Truth (Å)')
+        ax.set_ylabel('Mean Intra-ensemble RMSD (Å)')
         
         plt.tight_layout()
         return self._save(fig, save_path)
