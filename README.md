@@ -1,5 +1,20 @@
-# metfish
-Code for the MetFish LDRD project
+# AlphaSAXS
+
+**Experimental Data Driven AI Framework for Flexible Protein Conformational Reconstruction**
+
+Feng Yu, Stephanie Prince, Andrew Tritt, Kanupriya Pande, Greg L. Hura, Oliver Ruebel, Susan E. Tsutakawa  
+*Molecular Biophysics and Integrated Bioimaging / Computational Biosciences Group, Lawrence Berkeley National Laboratory*  
+Correspondence: setsutakawa@lbl.gov, oruebel@lbl.gov
+
+---
+
+Deep learning has transformed structural biology, enabling the prediction of static protein folds from primary sequences with near-experimental accuracy. In reality, most proteins are intrinsically dynamic, shifting between conformations to carry out their diverse functions, and current sequence-only models often fail to capture the specific conformational states and heterogeneity dictated by cellular environments or ligand binding. While recent generative models can sample broad conformational landscapes, they remain unconstrained by physical reality, often hallucinating plausible but experimentally invalid states.
+
+Here, we present **AlphaSAXS**, an end-to-end framework that constrains AI inference using Small Angle X-ray Scattering (SAXS) experimental solution scattering data. By integrating real-space pair distance distributions P(r) directly into both the multiple sequence alignment (MSA) and pair representation modules in the AlphaFold/OpenFold architecture, AlphaSAXS effectively steers structural hypotheses toward experimentally observed structures. We demonstrate that AlphaSAXS improves prediction accuracy where sequence-only models fail to capture diverse conformations in apo-holo transitions, successfully guiding predictions with experimental scattering profiles.
+
+This work establishes a paradigm for experimentally guided AI, bridging the gap between probabilistic sampling and biophysical measurement, with implications for understanding allosteric mechanisms and development of novel therapeutics, bioengineering and biomanufacturing, and biodefense.
+
+---
 
 ## Installation
 
@@ -70,6 +85,37 @@ data_dir/
 - **MSA directories**: Each protein should have a subdirectory in `msa/` containing:
   - **A3M files** (`.a3m`): Multiple sequence alignments in A3M format structured within an `a3m` subfolder.
 
+## Reproducing Publication Figures
+
+All publication figures can be regenerated from pre-computed results using the master figure generation script. No model inference is required.
+
+```bash
+python src/metfish/analysis/scripts/generate_all_figures.py --output-dir publication_figures/
+```
+
+This regenerates all figures from Figures 2–4 and the supplementary information into the specified output directory. To generate a subset:
+
+```bash
+# Figure 2 only (model comparison: RMSD, Rg, SAXS, metrics)
+python src/metfish/analysis/scripts/generate_all_figures.py --figures figure2
+
+# Figure 3 only (apo-holo analysis: P(r), RMSD, recovery, correlation)
+python src/metfish/analysis/scripts/generate_all_figures.py --figures figure3
+
+# Figure 4 only (ensemble analysis: barplot, Rg, Re, diversity)
+python src/metfish/analysis/scripts/generate_all_figures.py --figures figure4
+```
+
+Supplementary Information figures (all 80 proteins) can be generated with:
+
+```bash
+python src/metfish/analysis/scripts/generate_si_figures.py --output-dir SI_figures/
+```
+
+## Data Availability
+
+Data will be available upon request.
+
 ## Generating Figures
 
 The `scripts/generate_figures.py` script runs model inference and generates comparison visualizations for protein structure predictions. This script processes multiple models (AlphaFold, SFold_NMR, SFold_NMA) and creates figures comparing their performance.
@@ -120,6 +166,17 @@ data_dir/
 
 ## Commands
 
-- `calc-pr`: Calculate P(r) for models from a PDB or mmCIF file
-- `extract-seq`: Extract Sequence from a PDB file.
-- `generate-nma-conformers`: Generate conformations from normal mode analysis
+The following CLI commands are available after installation:
+
+- `calc-pr`: Calculate the P(r) pair distance distribution for a protein structure from a PDB or mmCIF file.
+  ```bash
+  calc-pr structure.pdb
+  ```
+- `extract-seq`: Extract the amino acid sequence from a PDB file.
+  ```bash
+  extract-seq structure.pdb
+  ```
+- `generate-nma-conformers`: Generate an ensemble of conformations by normal mode analysis (NMA).
+  ```bash
+  generate-nma-conformers structure.pdb --n-modes 10 --n-conformers 50
+  ```

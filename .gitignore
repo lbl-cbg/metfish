@@ -9,3 +9,16 @@ __pycache__
 **/wandb/*
 **/alphaflow/*
 *.pdf
+
+# Build artifacts
+build/
+dist/
+
+# Coverage reports
+htmlcov/
+coverage.xml
+.coverage
+.pytest_cache/
+
+# Temporary / review staging folder
+_temp/
