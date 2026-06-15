@@ -52,6 +52,7 @@ training = ["wandb==0.16.6",
             "openfold @ git+https://github.com/aqlaboratory/openfold.git@103d037",
             "ml-collections==0.1.0",
             "dm-tree==0.1.6",
+            "lightning==2.1.0",
             "modelcif==0.7",
             "biopython==1.79",   # specific versions of main dependencies for reproducibility
             "pandas==1.5.3",

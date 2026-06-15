@@ -71,9 +71,25 @@ def generate_nma_conformers_cli(argv=None):
     fname = Path(args.filename)
     name = '_'.join(fname.stem.split('_')[1:])  # TODO - check this is accurate
 
-    conformer_coords = sample_conformers(fname, 
-                                         n_modes=args.n_modes, 
-                                         n_confs=args.n_confs, 
-                                         rmsd=args.rmsd)
+    # Ensure numeric types are passed to sample_conformers (argparse may return strings)
+    try:
+        n_modes = int(args.n_modes)
+    except Exception:
+        n_modes = args.n_modes
+
+    try:
+        n_confs = int(args.n_confs)
+    except Exception:
+        n_confs = args.n_confs
+
+    try:
+        rmsd = float(args.rmsd)
+    except Exception:
+        rmsd = args.rmsd
+
+    conformer_coords = sample_conformers(fname,
+                                         n_modes=n_modes,
+                                         n_confs=n_confs,
+                                         rmsd=rmsd)
 
     write_conformers(Path(args.output), name, conformer_coords)

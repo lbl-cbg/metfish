@@ -80,7 +80,7 @@ if __name__ == "__main__":
                         help='Path where results and figures will be saved')
     parser.add_argument('--overwrite', action='store_true', default=False, 
                         help='Force overwrite of existing output files')
-    parser.add_argument('--skip-inference', action='store_true', default=True, 
+    parser.add_argument('--skip-inference', action='store_true', default=False, 
                         help=('Skip the model inference step and only generate figures from existing predictions. '
                               'Use this flag when you already have model predictions and only want to regenerate visualizations.'))
     parser.add_argument('--models', type=str, nargs='+', default=['AlphaFold', 'SFold_NMR', 'SFold_NMA'], help='Specify which models to run')
